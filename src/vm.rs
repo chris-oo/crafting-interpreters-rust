@@ -12,14 +12,14 @@ pub enum InterpretResult {
     InterpretRuntimeError,
 }
 
-pub struct VM {
-    chunk: Option<Chunk>,
+pub struct VM<'a> {
+    chunk: Option<&'a Chunk>,
     ip: usize,
     stack: [Value; STACK_MAX],
     stack_top: usize,
 }
 
-impl VM {
+impl<'a> VM<'a> {
     pub fn new() -> Self {
         VM {
             chunk: Option::None,
@@ -33,15 +33,14 @@ impl VM {
         self.stack_top = 0;
     }
 
-    pub fn interpret(&mut self, chunk: &Chunk) -> InterpretResult {
-        // TODO - how does one create an option pointer from a ref? is it not
-        // possible in safe rust because the lifetime of the called object
-        // cannot be determined?
+    pub fn interpret<'b: 'a>(&'a mut self, chunk: &'b Chunk) -> InterpretResult {
+        // TODO - is this really the best way to do it?
         //
-        // What would be the idiomatic thing to do here, take an Option<Chunk> and take ownership of it?
+        // Maybe take a reference counted pointer?
         //
-        // Probably take a reference counted pointer?
-        self.chunk = Option::Some(chunk.clone());
+        // It probably makes more sense for the VM to "own" the whole chunklist once the
+        // compilation phase is done.
+        self.chunk = Option::Some(chunk);
         self.ip = 0;
         self.run()
     }
