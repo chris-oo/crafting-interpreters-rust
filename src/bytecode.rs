@@ -5,4 +5,8 @@ pub enum Opcodes {
     OpReturn,
     OpConstant,
     OpNegate,
+    OpAdd,
+    OpSubtract,
+    OpMultiply,
+    OpDivide,
 }

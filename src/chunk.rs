@@ -66,6 +66,10 @@ impl Chunk {
             Some(Opcodes::OpReturn) => Chunk::simple_instruction("OP_RETURN", offset),
             Some(Opcodes::OpConstant) => Chunk::constant_instruction("OP_CONSTANT", self, offset),
             Some(Opcodes::OpNegate) => Chunk::simple_instruction("OP_NEGATE", offset),
+            Some(Opcodes::OpAdd) => Chunk::simple_instruction("OP_ADD", offset),
+            Some(Opcodes::OpSubtract) => Chunk::simple_instruction("OP_SUBTRACT", offset),
+            Some(Opcodes::OpMultiply) => Chunk::simple_instruction("OP_MULTIPLY", offset),
+            Some(Opcodes::OpDivide) => Chunk::simple_instruction("OP_DIVIDE", offset),
             // Some(_) => unimplemented!("Opcode not implemented {}", self.code[offset]),
             None => {
                 print!("Unknown opcode {0}\n", self.code[offset]);

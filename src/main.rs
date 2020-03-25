@@ -13,6 +13,18 @@ fn main() {
     let constant = chunk.add_constant(1.2);
     chunk.add_instruction(bytecode::Opcodes::OpConstant, 123);
     chunk.write_chunk(constant as u8, 123);
+
+    let constant = chunk.add_constant(3.4);
+    chunk.add_instruction(bytecode::Opcodes::OpConstant, 123);
+    chunk.write_chunk(constant as u8, 123);
+
+    chunk.add_instruction(bytecode::Opcodes::OpAdd, 123);
+
+    let constant = chunk.add_constant(5.6);
+    chunk.add_instruction(bytecode::Opcodes::OpConstant, 123);
+    chunk.write_chunk(constant as u8, 123);
+
+    chunk.add_instruction(bytecode::Opcodes::OpDivide, 123);
     chunk.add_instruction(bytecode::Opcodes::OpNegate, 123);
 
     chunk.add_instruction(bytecode::Opcodes::OpReturn, 123);

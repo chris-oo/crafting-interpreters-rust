@@ -68,6 +68,14 @@ impl VM {
     }
 
     fn run(&mut self) -> InterpretResult {
+        macro_rules! binary_op {
+            ($op:tt) => {
+                let b = self.pop();
+                let a = self.pop();
+                self.push(a $op b);
+            };
+        }
+
         loop {
             if DEBUG_TRACE_EXECUTION {
                 print!("          ");
@@ -100,7 +108,19 @@ impl VM {
                     let value = -self.pop();
                     self.push(value);
                 }
-                // Some(_) => unimplemented!("Opcode not implemented {}", self.code[offset]),
+                Some(Opcodes::OpAdd) => {
+                    binary_op!(+);
+                }
+                Some(Opcodes::OpSubtract) => {
+                    binary_op!(-);
+                }
+                Some(Opcodes::OpMultiply) => {
+                    binary_op!(*);
+                }
+                Some(Opcodes::OpDivide) => {
+                    binary_op!(/);
+                }
+                // Some(_) => unimplemented!("Opcode not implemented"),
                 None => return InterpretResult::InterpretRuntimeError,
             }
         }
