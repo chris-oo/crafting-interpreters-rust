@@ -2,7 +2,9 @@ use crate::bytecode::Opcodes;
 use crate::bytecode::Value;
 use crate::chunk::Chunk;
 
-static DEBUG_TRACE_EXECUTION: bool = true;
+const DEBUG_TRACE_EXECUTION: bool = true;
+
+const STACK_MAX: usize = 256;
 
 pub enum InterpretResult {
     InterpretOk,
@@ -13,6 +15,8 @@ pub enum InterpretResult {
 pub struct VM {
     chunk: Option<Chunk>,
     ip: usize,
+    stack: [Value; STACK_MAX],
+    stack_top: usize,
 }
 
 impl VM {
@@ -20,7 +24,13 @@ impl VM {
         VM {
             chunk: Option::None,
             ip: 0,
+            stack: [0.0; STACK_MAX],
+            stack_top: 0,
         }
+    }
+
+    fn reset_stack(&mut self) {
+        self.stack_top = 0;
     }
 
     pub fn interpret(&mut self, chunk: &Chunk) -> InterpretResult {
@@ -34,6 +44,16 @@ impl VM {
         self.chunk = Option::Some(chunk.clone());
         self.ip = 0;
         self.run()
+    }
+
+    fn push(&mut self, value: Value) {
+        self.stack[self.stack_top] = value;
+        self.stack_top += 1;
+    }
+
+    fn pop(&mut self) -> Value {
+        self.stack_top -= 1;
+        self.stack[self.stack_top]
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -50,6 +70,14 @@ impl VM {
     fn run(&mut self) -> InterpretResult {
         loop {
             if DEBUG_TRACE_EXECUTION {
+                print!("          ");
+                let mut i = 0;
+                while i < self.stack_top {
+                    print!("[{:?}]", self.stack[i]);
+                    i += 1;
+                }
+                print!("\n");
+
                 self.chunk
                     .as_ref()
                     .unwrap()
@@ -59,10 +87,18 @@ impl VM {
             let instruction = num::FromPrimitive::from_u8(self.read_byte());
 
             match instruction {
-                Some(Opcodes::OpReturn) => return InterpretResult::InterpretOk,
+                Some(Opcodes::OpReturn) => {
+                    println!("{:?}", self.pop());
+                    return InterpretResult::InterpretOk;
+                }
+
                 Some(Opcodes::OpConstant) => {
                     let constant = self.read_constant();
-                    println!("DEBUG: constant {:?}", constant);
+                    self.push(constant);
+                }
+                Some(Opcodes::OpNegate) => {
+                    let value = -self.pop();
+                    self.push(value);
                 }
                 // Some(_) => unimplemented!("Opcode not implemented {}", self.code[offset]),
                 None => return InterpretResult::InterpretRuntimeError,

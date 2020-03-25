@@ -4,4 +4,5 @@ pub type Value = f64;
 pub enum Opcodes {
     OpReturn,
     OpConstant,
+    OpNegate,
 }

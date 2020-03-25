@@ -13,6 +13,7 @@ fn main() {
     let constant = chunk.add_constant(1.2);
     chunk.add_instruction(bytecode::Opcodes::OpConstant, 123);
     chunk.write_chunk(constant as u8, 123);
+    chunk.add_instruction(bytecode::Opcodes::OpNegate, 123);
 
     chunk.add_instruction(bytecode::Opcodes::OpReturn, 123);
     chunk.dissasemble("test chunk");
