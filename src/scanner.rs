@@ -132,7 +132,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn peek_next(&self) -> char {
-        let next = self.current.clone().next();
+        let next = self.current.clone().skip(1).next();
 
         if next == None {
             return '\0';
@@ -192,8 +192,16 @@ impl<'a> Scanner<'a> {
                 token_type: TokenType::TokenEof,
             };
 
-            // calling common make_token panics, because we're at the end for the iterators (duh)
+            // calling common make_token panics, because we're at the end for
+            // the iterators (duh)
+            //
             // return self.make_token(TokenType::TokenEof);
+            //
+            // Instead, scan token should return an iterator/option. Basically
+            // the scanner should be an iterator that takes a string and output
+            // is Iterator<Item = Token>. Then next_token can return an option
+            // and there can't be a misuse of it.
+            //
         }
 
         let c = self.advance();
@@ -287,7 +295,7 @@ impl<'a> Scanner<'a> {
         }
 
         // Look for a fractional part.
-        if self.peek() == '.' && self.peek_next().is_numeric() {
+        if self.peek() == '.' && Scanner::is_digit(self.peek_next()) {
             // Consume the ".".
             self.advance();
 
@@ -376,5 +384,24 @@ impl<'a> Scanner<'a> {
         }
 
         self.make_token(TokenType::TokenIdentifier)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scanner;
+
+    #[test]
+
+    fn peek_next_test() {
+        let string = String::from("1.2");
+        let mut scanner = Scanner::new(&string);
+
+        assert_eq!(scanner.peek(), '1');
+        assert_eq!(scanner.peek_next(), '.');
+
+        assert_eq!(scanner.advance(), '1');
+        assert_eq!(scanner.peek(), '.');
+        assert_eq!(scanner.peek_next(), '2');
     }
 }

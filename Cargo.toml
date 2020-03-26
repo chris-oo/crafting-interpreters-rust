@@ -1,5 +1,5 @@
 [package]
-name = "crafting-interpreters-rust"
+name = "rlox"
 version = "0.1.0"
 authors = ["Chris"]
 edition = "2018"
