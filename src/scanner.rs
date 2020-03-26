@@ -5,61 +5,63 @@ pub struct Scanner<'a> {
     line: i32,
 }
 
-// TODO - named struct for every token type seems dumb. How can you just embed these on each type?
-pub struct TokenInfo<'a> {
-    string: &'a str, // The slice that actually holds the string containing the token
-    line: i32,
-}
-
-pub enum Token<'a> {
+#[derive(Debug)]
+pub enum TokenType {
     // Single-character tokens.
-    TokenLeftParen(TokenInfo<'a>),
-    TokenRightParen(TokenInfo<'a>),
-    TokenLeftBrace(TokenInfo<'a>),
-    TokenRightBrace(TokenInfo<'a>),
-    TokenComma(TokenInfo<'a>),
-    TokenDot(TokenInfo<'a>),
-    TokenMinus(TokenInfo<'a>),
-    TokenPlus(TokenInfo<'a>),
-    TokenSemicolon(TokenInfo<'a>),
-    TokenSlash(TokenInfo<'a>),
-    TokenStar(TokenInfo<'a>),
+    TokenLeftParen,
+    TokenRightParen,
+    TokenLeftBrace,
+    TokenRightBrace,
+    TokenComma,
+    TokenDot,
+    TokenMinus,
+    TokenPlus,
+    TokenSemicolon,
+    TokenSlash,
+    TokenStar,
 
     // One or two character tokens.
-    TokenBang(TokenInfo<'a>),
-    TokenBangEqual(TokenInfo<'a>),
-    TokenEqual(TokenInfo<'a>),
-    TokenEqualEqual(TokenInfo<'a>),
-    TokenGreater(TokenInfo<'a>),
-    TokenGreaterEqual(TokenInfo<'a>),
-    TokenLess(TokenInfo<'a>),
-    TokenLessEqual(TokenInfo<'a>),
+    TokenBang,
+    TokenBangEqual,
+    TokenEqual,
+    TokenEqualEqual,
+    TokenGreater,
+    TokenGreaterEqual,
+    TokenLess,
+    TokenLessEqual,
 
     // Literals.
-    TokenIdentifier(TokenInfo<'a>),
-    TokenString(TokenInfo<'a>),
-    TokenNumber(TokenInfo<'a>),
+    TokenIdentifier,
+    TokenString,
+    TokenNumber,
 
     // Keywords.
-    TokenAnd(TokenInfo<'a>),
-    TokenClass(TokenInfo<'a>),
-    TokenElse(TokenInfo<'a>),
-    TokenFalse(TokenInfo<'a>),
-    TokenFor(TokenInfo<'a>),
-    TokenFun(TokenInfo<'a>),
-    TokenIf(TokenInfo<'a>),
-    TokenNil(TokenInfo<'a>),
-    TokenOr(TokenInfo<'a>),
-    TokenPrint(TokenInfo<'a>),
-    TokenReturn(TokenInfo<'a>),
-    TokenSuper(TokenInfo<'a>),
-    TokenThis(TokenInfo<'a>),
-    TokenTrue(TokenInfo<'a>),
-    TokenVar(TokenInfo<'a>),
-    TokenWhile(TokenInfo<'a>),
+    TokenAnd,
+    TokenClass,
+    TokenElse,
+    TokenFalse,
+    TokenFor,
+    TokenFun,
+    TokenIf,
+    TokenNil,
+    TokenOr,
+    TokenPrint,
+    TokenReturn,
+    TokenSuper,
+    TokenThis,
+    TokenTrue,
+    TokenVar,
+    TokenWhile,
 
-    TokenError(TokenInfo<'a>),
-    TokenEof(TokenInfo<'a>),
+    TokenError,
+    TokenEof,
+}
+
+// TODO - named struct for every token type seems dumb. How can you just embed these on each type?
+pub struct Token<'a> {
+    pub string: &'a str, // The slice that actually holds the string containing the token
+    pub line: i32,
+    pub token_type: TokenType,
 }
 
 // TODO - this seems like a macro to me? or template function...?
@@ -75,16 +77,26 @@ pub enum Token<'a> {
 // }
 //
 // TODO - there's no way this is the right way to create a string slice from iterators.
-macro_rules! make_token {
-    ($self:ident, $token_type:tt) => {
-        Token::$token_type(TokenInfo {
-            string: &$self.source[$self.start.peek().unwrap().0..$self.current.peek().unwrap().0],
-            line: $self.line,
-        })
-    };
-}
+// macro_rules! make_token {
+//     ($self:ident, $token_type:tt) => {
+//         Token::$token_type(TokenInfo {
+//             string: &$self.source[$self.start.peek().unwrap().0..$self.current.peek().unwrap().0],
+//             line: $self.line,
+//         })
+//     };
+// }
 
+// TODO - there's no way this is the right way to create a string slice from iterators.
 impl<'a> Scanner<'a> {
+    // TODO - self is mut why? cause peek is mut?
+    fn make_token(&mut self, token_type: TokenType) -> Token {
+        Token {
+            string: &self.source[self.start.peek().unwrap().0..self.current.peek().unwrap().0],
+            line: self.line,
+            token_type: token_type,
+        }
+    }
+
     pub fn new(source: &'a std::string::String) -> Self {
         Scanner {
             source: source,
@@ -94,7 +106,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn is_at_end(&self) -> bool {
+    pub fn is_at_end(&mut self) -> bool {
         return self.current.peek() == None;
     }
 
@@ -115,7 +127,7 @@ impl<'a> Scanner<'a> {
         return true;
     }
 
-    fn peek(&self) -> char {
+    fn peek(&mut self) -> char {
         self.current.peek().unwrap().1
     }
 
@@ -171,53 +183,53 @@ impl<'a> Scanner<'a> {
     pub fn scan_token(&mut self) -> Token {
         self.skip_whitespace();
 
-        self.start = self.current;
+        self.start = self.current.clone();
 
         if self.is_at_end() {
-            return make_token!(self, TokenEof);
+            return self.make_token(TokenType::TokenEof);
         }
 
         let c = self.advance();
 
         match c {
-            '(' => return make_token!(self, TokenLeftParen),
-            ')' => return make_token!(self, TokenRightParen),
-            '{' => return make_token!(self, TokenLeftBrace),
-            '}' => return make_token!(self, TokenRightBrace),
-            ';' => return make_token!(self, TokenSemicolon),
-            ',' => return make_token!(self, TokenComma),
-            '.' => return make_token!(self, TokenDot),
-            '-' => return make_token!(self, TokenMinus),
-            '+' => return make_token!(self, TokenPlus),
-            '/' => return make_token!(self, TokenSlash),
-            '*' => return make_token!(self, TokenStar),
+            '(' => return self.make_token(TokenType::TokenLeftParen),
+            ')' => return self.make_token(TokenType::TokenRightParen),
+            '{' => return self.make_token(TokenType::TokenLeftBrace),
+            '}' => return self.make_token(TokenType::TokenRightBrace),
+            ';' => return self.make_token(TokenType::TokenSemicolon),
+            ',' => return self.make_token(TokenType::TokenComma),
+            '.' => return self.make_token(TokenType::TokenDot),
+            '-' => return self.make_token(TokenType::TokenMinus),
+            '+' => return self.make_token(TokenType::TokenPlus),
+            '/' => return self.make_token(TokenType::TokenSlash),
+            '*' => return self.make_token(TokenType::TokenStar),
             // TODO - Probably can macro these double character matches too.
             '!' => {
                 if self.match_character('=') {
-                    return make_token!(self, TokenBangEqual);
+                    return self.make_token(TokenType::TokenBangEqual);
                 } else {
-                    return make_token!(self, TokenBang);
+                    return self.make_token(TokenType::TokenBang);
                 }
             }
             '=' => {
                 if self.match_character('=') {
-                    return make_token!(self, TokenEqualEqual);
+                    return self.make_token(TokenType::TokenEqualEqual);
                 } else {
-                    return make_token!(self, TokenBang);
+                    return self.make_token(TokenType::TokenBang);
                 }
             }
             '<' => {
                 if self.match_character('=') {
-                    return make_token!(self, TokenLessEqual);
+                    return self.make_token(TokenType::TokenLessEqual);
                 } else {
-                    return make_token!(self, TokenLess);
+                    return self.make_token(TokenType::TokenLess);
                 }
             }
             '>' => {
                 if self.match_character('=') {
-                    return make_token!(self, TokenGreaterEqual);
+                    return self.make_token(TokenType::TokenGreaterEqual);
                 } else {
-                    return make_token!(self, TokenGreater);
+                    return self.make_token(TokenType::TokenGreater);
                 }
             }
             '"' => {
@@ -236,10 +248,11 @@ impl<'a> Scanner<'a> {
     }
 
     fn make_error_token(&self, string: &'a str) -> Token {
-        Token::TokenError(TokenInfo {
+        Token {
             string: string,
             line: self.line,
-        })
+            token_type: TokenType::TokenError,
+        }
     }
 
     fn make_string_token(&mut self) -> Token {
@@ -258,7 +271,7 @@ impl<'a> Scanner<'a> {
         // The closing quote.
         self.advance();
 
-        make_token!(self, TokenString)
+        self.make_token(TokenType::TokenString)
     }
 
     fn make_number_token(&mut self) -> Token {
@@ -276,13 +289,14 @@ impl<'a> Scanner<'a> {
             }
         }
 
-        make_token!(self, TokenNumber)
+        self.make_token(TokenType::TokenNumber)
     }
 
     // Check if the identifier we matched is a keyword.
-    fn check_keyword(iter: std::iter::Peekable<std::str::CharIndices<'a>>, rest: &str) -> bool {
+    fn check_keyword(mut iter: std::iter::Peekable<std::str::CharIndices<'a>>, rest: &str) -> bool {
         // First check length. If they don't match, can't possibly match.
-        if (iter.count()) != rest.len() {
+        // TODO - how to check length without iterating through iterator, impossible??
+        if (iter.clone().count()) != rest.len() {
             return false;
         }
 
@@ -307,9 +321,9 @@ impl<'a> Scanner<'a> {
         macro_rules! make_keyword {
             ($iter:ident, $rest:expr, $token_type:tt) => {
                 if Scanner::check_keyword($iter, $rest) {
-                    return make_token!(self, TokenAnd);
+                    return self.make_token(TokenType::$token_type);
                 } else {
-                    return make_token!(self, TokenIdentifier);
+                    return self.make_token(TokenType::TokenIdentifier);
                 }
             };
         }
@@ -327,6 +341,7 @@ impl<'a> Scanner<'a> {
                         'a' => make_keyword!(iter, "lse", TokenFalse),
                         'o' => make_keyword!(iter, "r", TokenFor),
                         'u' => make_keyword!(iter, "n", TokenFun),
+                        _ => (),
                     },
                     None => {}
                 }
@@ -343,14 +358,16 @@ impl<'a> Scanner<'a> {
                     Some(x) => match x.1 {
                         'h' => make_keyword!(iter, "is", TokenThis),
                         'r' => make_keyword!(iter, "ue", TokenTrue),
+                        _ => (),
                     },
                     None => {}
                 }
             }
             'v' => make_keyword!(iter, "ar", TokenVar),
             'w' => make_keyword!(iter, "hile", TokenWhile),
+            _ => (),
         }
 
-        make_token!(self, TokenIdentifier)
+        self.make_token(TokenType::TokenIdentifier)
     }
 }

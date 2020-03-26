@@ -43,12 +43,12 @@ fn run_file(filename: &String) {
     let file = fs::read_to_string(filename).expect("Error reading file");
 
     match vm.interpret(&file) {
-        InterpretOk => {}
-        InterpretCompileError => {
+        vm::InterpretResult::InterpretOk => {}
+        vm::InterpretResult::InterpretCompileError => {
             eprintln!("Compiler error reading file!");
             process::exit(65);
         }
-        InterpretRuntimeError => {
+        vm::InterpretResult::InterpretRuntimeError => {
             eprintln!("Runtime error executing file!");
             process::exit(70);
         }

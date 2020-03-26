@@ -1,7 +1,7 @@
 use crate::scanner;
 
 pub fn compile(source: &String) {
-    let scanner = scanner::Scanner::new(source);
+    let mut scanner = scanner::Scanner::new(source);
     let mut line = -1;
 
     loop {
@@ -14,10 +14,14 @@ pub fn compile(source: &String) {
             print!("   | ");
         }
 
-        // print!("{:2} '{}'\n", token.type, token.string);
+        print!("{:?} '{}'\n", token.token_type, token.string);
 
-        if token == Token::TokenEof {
-            break;
+        // TODO - Is there any way to not use match here?
+        match token.token_type {
+            scanner::TokenType::TokenEof => {
+                return;
+            }
+            _ => (),
         }
     }
 }
