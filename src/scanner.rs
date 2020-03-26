@@ -146,79 +146,65 @@ impl<'a> Scanner<'a> {
 
     // All these "char" returning functions should return options. Then no need for unwrap!
     // and its more rusty
+    //
+    // Really, this is almost like next, but not quite?
     fn advance(&mut self) -> Option<char> {
         // Kind of cludgy, but the caller really doesn't want the usize. But we
         // need it to construct the string slice later.
         match self.current.next() {
-            Some(x) => Option::Some(x.1),
+            Some((_, x)) => Option::Some(x),
             None => None,
         }
     }
 
-    fn match_character(&mut self, character: char) -> bool {
+    fn match_character(&mut self, c: char) -> bool {
         match self.peek() {
-            Some(x) => {
-                if x == character {
-                    self.current.next();
-                    return true;
-                }
+            Some(x) if x == c => {
+                self.current.next();
+                true
             }
-            None => (),
+            _ => false,
         }
-
-        false
     }
 
     fn peek(&mut self) -> Option<char> {
         match self.current.peek() {
-            Some(x) => Option::Some(x.1),
+            Some((_, x)) => Option::Some(*x),
             None => None,
         }
     }
 
     fn peek_next(&self) -> Option<char> {
-        let next = self.current.clone().skip(1).next();
+        let next = self.current.clone().nth(1);
 
         match next {
-            Some(x) => Option::Some(x.1),
+            Some((_, x)) => Option::Some(x),
             None => None,
         }
     }
 
     fn skip_whitespace(&mut self) {
         loop {
-            match self.peek() {
-                Some(c) => {
-                    match c {
-                        '\n' => {
-                            self.line += 1;
-                            self.advance();
-                        }
-                        x if x.is_whitespace() => {
-                            self.advance();
-                        }
-                        '/' => {
-                            if self.peek_next() == Some('/') {
-                                // Comments eat everything until the next line.
-                                loop {
-                                    match self.peek() {
-                                        Some('\n') => {
-                                            break;
-                                        }
-                                        Some(_) => {
-                                            self.advance();
-                                        }
-                                        None => return,
-                                    }
-                                }
-                            } else {
-                                return;
-                            }
-                        }
-                        _ => return,
-                    }
+            match (self.peek(), self.peek_next()) {
+                (Some('\n'), _) => {
+                    self.line += 1;
+                    self.advance();
                 }
-                None => return,
+                (Some(x), _) if x.is_whitespace() => {
+                    self.advance();
+                }
+                (Some('/'), Some('/')) => loop {
+                    match self.peek() {
+                        Some('\n') => {
+                            break;
+                        }
+                        Some(_) => {
+                            self.advance();
+                        }
+                        None => return,
+                    }
+                },
+                _ => return,
             }
         }
     }
