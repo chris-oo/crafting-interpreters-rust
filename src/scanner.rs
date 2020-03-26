@@ -1,11 +1,13 @@
+// TODO - use non-peeking iterators?
+// TODO - is there any way to not use the string? Shouldn't the scanner just be some iterator/adapter instead?
 pub struct Scanner<'a> {
     source: &'a String,
-    start: std::iter::Peekable<std::str::CharIndices<'a>>, // TODO - use iterators? then don't need the source string?
+    start: std::iter::Peekable<std::str::CharIndices<'a>>,
     current: std::iter::Peekable<std::str::CharIndices<'a>>,
     line: i32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum TokenType {
     // Single-character tokens.
     TokenLeftParen,
@@ -58,33 +60,12 @@ pub enum TokenType {
 }
 
 // TODO - named struct for every token type seems dumb. How can you just embed these on each type?
+#[derive(Debug, Eq, PartialEq)]
 pub struct Token<'a> {
     pub string: &'a str, // The slice that actually holds the string containing the token
     pub line: i32,
     pub token_type: TokenType,
 }
-
-// TODO - this seems like a macro to me? or template function...?
-// C Code:
-// static Token makeToken(TokenType type) {
-//     Token token;
-//     token.type = type;
-//     token.start = scanner.start;
-//     token.length = (int)(scanner.current - scanner.start);
-//     token.line = scanner.line;
-//
-//     return token;
-// }
-//
-// TODO - there's no way this is the right way to create a string slice from iterators.
-// macro_rules! make_token {
-//     ($self:ident, $token_type:tt) => {
-//         Token::$token_type(TokenInfo {
-//             string: &$self.source[$self.start.peek().unwrap().0..$self.current.peek().unwrap().0],
-//             line: $self.line,
-//         })
-//     };
-// }
 
 trait IsLoxDigit {
     fn is_lox_digit(&self) -> bool;
@@ -128,10 +109,21 @@ impl IsLoxAlpha for Option<char> {
 impl<'a> Scanner<'a> {
     // TODO - self is mut why? cause peek is mut?
     fn make_token(&mut self, token_type: TokenType) -> Token {
-        Token {
-            string: &self.source[self.start.peek().unwrap().0..self.current.peek().unwrap().0],
-            line: self.line,
-            token_type: token_type,
+        match (self.start.peek(), self.current.peek()) {
+            (Some(start), Some(current)) => Token {
+                string: &self.source[start.0..current.0],
+                line: self.line,
+                token_type: token_type,
+            },
+            (Some(start), None) => Token {
+                string: &self.source[start.0..],
+                line: self.line,
+                token_type: token_type,
+            },
+            _ => {
+                // Parser error, should never happen. Start should always be valid.
+                panic!("start was invalid when calling make_token");
+            }
         }
     }
 
@@ -157,6 +149,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    // Consume a character if it matches the supplied one, returning true or false if it matched.
     fn match_character(&mut self, c: char) -> bool {
         match self.peek() {
             Some(x) if x == c => {
@@ -194,6 +187,8 @@ impl<'a> Scanner<'a> {
                     self.advance();
                 }
                 (Some('/'), Some('/')) => loop {
+                    // Consume all characters up to then next newline, not including the
+                    // newline.
                     match self.peek() {
                         Some('\n') => {
                             break;
@@ -221,62 +216,56 @@ impl<'a> Scanner<'a> {
         //
 
         match self.advance() {
-            Some(c) => {
-                match c {
-                    '(' => return self.make_token(TokenType::TokenLeftParen),
-                    ')' => return self.make_token(TokenType::TokenRightParen),
-                    '{' => return self.make_token(TokenType::TokenLeftBrace),
-                    '}' => return self.make_token(TokenType::TokenRightBrace),
-                    ';' => return self.make_token(TokenType::TokenSemicolon),
-                    ',' => return self.make_token(TokenType::TokenComma),
-                    '.' => return self.make_token(TokenType::TokenDot),
-                    '-' => return self.make_token(TokenType::TokenMinus),
-                    '+' => return self.make_token(TokenType::TokenPlus),
-                    '/' => return self.make_token(TokenType::TokenSlash),
-                    '*' => return self.make_token(TokenType::TokenStar),
-                    // TODO - Probably can macro these double character matches too.
-                    '!' => {
-                        if self.match_character('=') {
-                            return self.make_token(TokenType::TokenBangEqual);
-                        } else {
-                            return self.make_token(TokenType::TokenBang);
-                        }
-                    }
-                    '=' => {
-                        if self.match_character('=') {
-                            return self.make_token(TokenType::TokenEqualEqual);
-                        } else {
-                            return self.make_token(TokenType::TokenEqual);
-                        }
-                    }
-                    '<' => {
-                        if self.match_character('=') {
-                            return self.make_token(TokenType::TokenLessEqual);
-                        } else {
-                            return self.make_token(TokenType::TokenLess);
-                        }
-                    }
-                    '>' => {
-                        if self.match_character('=') {
-                            return self.make_token(TokenType::TokenGreaterEqual);
-                        } else {
-                            return self.make_token(TokenType::TokenGreater);
-                        }
-                    }
-                    '"' => {
-                        return self.make_string_token();
-                    }
-                    x if x.is_lox_digit() => {
-                        return self.make_number_token();
-                    }
-                    x if x.is_lox_alpha() => {
-                        return self.make_identifier_token();
-                    }
-                    _ => {}
+            Some('(') => return self.make_token(TokenType::TokenLeftParen),
+            Some(')') => return self.make_token(TokenType::TokenRightParen),
+            Some('{') => return self.make_token(TokenType::TokenLeftBrace),
+            Some('}') => return self.make_token(TokenType::TokenRightBrace),
+            Some(';') => return self.make_token(TokenType::TokenSemicolon),
+            Some(',') => return self.make_token(TokenType::TokenComma),
+            Some('.') => return self.make_token(TokenType::TokenDot),
+            Some('-') => return self.make_token(TokenType::TokenMinus),
+            Some('+') => return self.make_token(TokenType::TokenPlus),
+            Some('/') => return self.make_token(TokenType::TokenSlash),
+            Some('*') => return self.make_token(TokenType::TokenStar),
+            // TODO - Probably can macro these double character matches too.
+            Some('!') => {
+                if self.match_character('=') {
+                    return self.make_token(TokenType::TokenBangEqual);
+                } else {
+                    return self.make_token(TokenType::TokenBang);
                 }
-
-                self.make_error_token("Unexpected character.")
             }
+            Some('=') => {
+                if self.match_character('=') {
+                    return self.make_token(TokenType::TokenEqualEqual);
+                } else {
+                    return self.make_token(TokenType::TokenEqual);
+                }
+            }
+            Some('<') => {
+                if self.match_character('=') {
+                    return self.make_token(TokenType::TokenLessEqual);
+                } else {
+                    return self.make_token(TokenType::TokenLess);
+                }
+            }
+            Some('>') => {
+                if self.match_character('=') {
+                    return self.make_token(TokenType::TokenGreaterEqual);
+                } else {
+                    return self.make_token(TokenType::TokenGreater);
+                }
+            }
+            Some('"') => {
+                return self.make_string_token();
+            }
+            Some(x) if x.is_lox_digit() => {
+                return self.make_number_token();
+            }
+            Some(x) if x.is_lox_alpha() => {
+                return self.make_identifier_token();
+            }
+            Some(_) => return self.make_error_token("Unexpected character."),
             None => Token {
                 string: "",
                 line: self.line,
@@ -338,23 +327,24 @@ impl<'a> Scanner<'a> {
     }
 
     // Check if the identifier we matched is a keyword.
-    fn check_keyword(mut iter: std::iter::Peekable<std::str::CharIndices<'a>>, rest: &str) -> bool {
-        // First check length. If they don't match, can't possibly match.
-        // TODO - how to check length without iterating through iterator, impossible??
-        // Is it even better to do this than just checking char by char?
-        if (iter.clone().count()) != rest.len() {
-            return false;
-        }
-
+    fn check_keyword(
+        &mut self,
+        mut iter: std::iter::Peekable<std::str::CharIndices<'a>>,
+        rest: &str,
+    ) -> bool {
         // Check each character if they match.
         for c in rest.chars() {
-            if c != iter.next().unwrap().1 {
-                return false;
+            match iter.next() {
+                Some((_, x)) if x == c => {}
+                _ => {
+                    // Either length or character doesn't match.
+                    return false;
+                }
             }
         }
 
-        // Everything matched, so it's a keyword.
-        true
+        // Length should match, so iter should be current.
+        return iter.next().as_ref() == self.current.peek();
     }
 
     fn make_identifier_token(&mut self) -> Token {
@@ -366,7 +356,7 @@ impl<'a> Scanner<'a> {
         // TODO - seems to me this could be a closure? or maybe not because of Token Type?
         macro_rules! make_keyword {
             ($iter:ident, $rest:expr, $token_type:tt) => {
-                if Scanner::check_keyword($iter, $rest) {
+                if self.check_keyword($iter, $rest) {
                     return self.make_token(TokenType::$token_type);
                 } else {
                     return self.make_token(TokenType::TokenIdentifier);
@@ -376,42 +366,33 @@ impl<'a> Scanner<'a> {
 
         // Produce a token with the proper type.
         let mut iter = self.start.clone();
-        match iter.next().unwrap().1 {
-            'a' => make_keyword!(iter, "nd", TokenAnd),
-            'c' => make_keyword!(iter, "lass", TokenClass),
-            'e' => make_keyword!(iter, "lse", TokenElse),
-            'f' => {
-                let next = iter.next();
-                match next {
-                    Some(x) => match x.1 {
-                        'a' => make_keyword!(iter, "lse", TokenFalse),
-                        'o' => make_keyword!(iter, "r", TokenFor),
-                        'u' => make_keyword!(iter, "n", TokenFun),
-                        _ => (),
-                    },
-                    None => {}
-                }
-            }
-            'i' => make_keyword!(iter, "f", TokenIf),
-            'n' => make_keyword!(iter, "il", TokenNil),
-            'o' => make_keyword!(iter, "r", TokenOr),
-            'p' => make_keyword!(iter, "rint", TokenPrint),
-            'r' => make_keyword!(iter, "eturn", TokenReturn),
-            's' => make_keyword!(iter, "uper", TokenSuper),
-            't' => {
-                let next = iter.next();
-                match next {
-                    Some(x) => match x.1 {
-                        'h' => make_keyword!(iter, "is", TokenThis),
-                        'r' => make_keyword!(iter, "ue", TokenTrue),
-                        _ => (),
-                    },
-                    None => {}
-                }
-            }
-            'v' => make_keyword!(iter, "ar", TokenVar),
-            'w' => make_keyword!(iter, "hile", TokenWhile),
-            _ => (),
+        match iter.next() {
+            Some((_, 'a')) => make_keyword!(iter, "nd", TokenAnd),
+            Some((_, 'c')) => make_keyword!(iter, "lass", TokenClass),
+            Some((_, 'e')) => make_keyword!(iter, "lse", TokenElse),
+            Some((_, 'f')) => match iter.next() {
+                Some((_, 'a')) => make_keyword!(iter, "lse", TokenFalse),
+                Some((_, 'o')) => make_keyword!(iter, "r", TokenFor),
+                Some((_, 'u')) => make_keyword!(iter, "n", TokenFun),
+                Some(_) => (),
+                None => {}
+            },
+            Some((_, 'i')) => make_keyword!(iter, "f", TokenIf),
+            Some((_, 'n')) => make_keyword!(iter, "il", TokenNil),
+            Some((_, 'o')) => make_keyword!(iter, "r", TokenOr),
+            Some((_, 'p')) => make_keyword!(iter, "rint", TokenPrint),
+            Some((_, 'r')) => make_keyword!(iter, "eturn", TokenReturn),
+            Some((_, 's')) => make_keyword!(iter, "uper", TokenSuper),
+            Some((_, 't')) => match iter.next() {
+                Some((_, 'h')) => make_keyword!(iter, "is", TokenThis),
+                Some((_, 'r')) => make_keyword!(iter, "ue", TokenTrue),
+                Some(_) => (),
+                None => (),
+            },
+            Some((_, 'v')) => make_keyword!(iter, "ar", TokenVar),
+            Some((_, 'w')) => make_keyword!(iter, "hile", TokenWhile),
+            Some(_) => (),
+            None => return self.make_error_token("Identifier parsing called on end of string."), // TODO - feels like panic is more appropriate here. It's a logic bug.
         }
 
         self.make_token(TokenType::TokenIdentifier)
@@ -421,11 +402,23 @@ impl<'a> Scanner<'a> {
 #[cfg(test)]
 mod tests {
     use super::Scanner;
+    use super::Token;
+    use super::TokenType;
     use totems::assert_none;
 
     macro_rules! assert_eq_char {
         ($left:expr, $right:expr) => {
             assert_eq!($left, Some($right))
+        };
+    }
+
+    macro_rules! token {
+        ($str:expr, $line:expr, $type:expr) => {
+            Token {
+                string: $str,
+                line: $line,
+                token_type: $type,
+            }
         };
     }
 
@@ -494,7 +487,33 @@ mod tests {
         assert_none!(scanner.advance());
     }
 
+    fn test_check_keyword() {}
+
     // test digit trait
 
     // test parsing number tokens
+    #[test]
+    fn simple_test() {
+        let string = String::from("print 1 + a;");
+        let mut scanner = Scanner::new(&string);
+
+        assert_eq!(
+            scanner.scan_token(),
+            token!("print", 1, TokenType::TokenPrint)
+        );
+        assert_eq!(scanner.scan_token(), token!("1", 1, TokenType::TokenNumber));
+        assert_eq!(scanner.scan_token(), token!("+", 1, TokenType::TokenPlus));
+        assert_eq!(
+            scanner.scan_token(),
+            token!("a", 1, TokenType::TokenIdentifier)
+        );
+        assert_eq!(
+            scanner.scan_token(),
+            token!(";", 1, TokenType::TokenSemicolon)
+        );
+        assert_eq!(scanner.scan_token(), token!("", 1, TokenType::TokenEof));
+    }
+
+    // test parsing keywords
+    fn keywords_test() {}
 }
