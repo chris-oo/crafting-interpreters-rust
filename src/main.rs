@@ -11,6 +11,7 @@ mod vm;
 use std::env;
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::process;
 
 fn repl() {
@@ -20,6 +21,7 @@ fn repl() {
 
     loop {
         print!("> ");
+        io::stdout().flush().unwrap();
 
         match io::stdin().read_line(&mut line) {
             Ok(n) => {

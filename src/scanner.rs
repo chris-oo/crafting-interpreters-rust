@@ -186,7 +186,14 @@ impl<'a> Scanner<'a> {
         self.start = self.current.clone();
 
         if self.is_at_end() {
-            return self.make_token(TokenType::TokenEof);
+            return Token {
+                string: "",
+                line: self.line,
+                token_type: TokenType::TokenEof,
+            };
+
+            // calling common make_token panics, because we're at the end for the iterators (duh)
+            // return self.make_token(TokenType::TokenEof);
         }
 
         let c = self.advance();
@@ -215,7 +222,7 @@ impl<'a> Scanner<'a> {
                 if self.match_character('=') {
                     return self.make_token(TokenType::TokenEqualEqual);
                 } else {
-                    return self.make_token(TokenType::TokenBang);
+                    return self.make_token(TokenType::TokenEqual);
                 }
             }
             '<' => {
