@@ -1,6 +1,7 @@
 use crate::bytecode::Opcodes;
 use crate::bytecode::Value;
 use crate::chunk::Chunk;
+use crate::compiler;
 
 const DEBUG_TRACE_EXECUTION: bool = true;
 
@@ -33,16 +34,9 @@ impl<'a> VM<'a> {
         self.stack_top = 0;
     }
 
-    pub fn interpret<'b: 'a>(&'a mut self, chunk: &'b Chunk) -> InterpretResult {
-        // TODO - is this really the best way to do it?
-        //
-        // Maybe take a reference counted pointer?
-        //
-        // It probably makes more sense for the VM to "own" the whole chunklist once the
-        // compilation phase is done.
-        self.chunk = Option::Some(chunk);
-        self.ip = 0;
-        self.run()
+    pub fn interpret(&mut self, source: &String) -> InterpretResult {
+        compiler::compile(source);
+        InterpretResult::InterpretOk
     }
 
     fn push(&mut self, value: Value) {

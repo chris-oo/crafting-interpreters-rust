@@ -4,34 +4,72 @@ extern crate num_derive;
 
 mod bytecode;
 mod chunk;
+mod compiler;
+mod scanner;
 mod vm;
 
-fn main() {
+use std::env;
+use std::fs;
+use std::io;
+use std::process;
+
+fn repl() {
     let mut vm = vm::VM::new();
-    let mut chunk = chunk::Chunk::new();
 
-    let constant = chunk.add_constant(1.2);
-    chunk.add_instruction(bytecode::Opcodes::OpConstant, 123);
-    chunk.write_chunk(constant as u8, 123);
+    let mut line = String::new();
 
-    let constant = chunk.add_constant(3.4);
-    chunk.add_instruction(bytecode::Opcodes::OpConstant, 123);
-    chunk.write_chunk(constant as u8, 123);
+    loop {
+        print!("> ");
 
-    chunk.add_instruction(bytecode::Opcodes::OpAdd, 123);
+        match io::stdin().read_line(&mut line) {
+            Ok(n) => {
+                if n == 0 {
+                    println!("EOF, exiting...");
+                    process::exit(0);
+                }
 
-    let constant = chunk.add_constant(5.6);
-    chunk.add_instruction(bytecode::Opcodes::OpConstant, 123);
-    chunk.write_chunk(constant as u8, 123);
+                vm.interpret(&line);
 
-    chunk.add_instruction(bytecode::Opcodes::OpDivide, 123);
-    chunk.add_instruction(bytecode::Opcodes::OpNegate, 123);
+                line.clear();
+            }
+            Err(error) => println!("error: {}", error),
+        }
+    }
+}
 
-    chunk.add_instruction(bytecode::Opcodes::OpReturn, 123);
-    chunk.dissasemble("test chunk");
-    vm.interpret(&chunk);
+fn run_file(filename: &String) {
+    let mut vm = vm::VM::new();
 
-    chunk.reset();
+    let file = fs::read_to_string(filename).expect("Error reading file");
+
+    match vm.interpret(&file) {
+        InterpretOk => {}
+        InterpretCompileError => {
+            eprintln!("Compiler error reading file!");
+            process::exit(65);
+        }
+        InterpretRuntimeError => {
+            eprintln!("Runtime error executing file!");
+            process::exit(70);
+        }
+    }
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    match args.len() {
+        1 => {
+            repl();
+        }
+        2 => {
+            run_file(&args[1]);
+        }
+        _ => {
+            eprintln!("Usage: clox [path]");
+            process::exit(64);
+        }
+    }
 }
 
 #[cfg(test)]
