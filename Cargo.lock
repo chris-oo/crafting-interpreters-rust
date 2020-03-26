@@ -119,6 +119,7 @@ dependencies = [
  "num",
  "num-derive",
  "num-traits",
+ "totems",
 ]
 
 [[package]]
@@ -131,6 +132,12 @@ dependencies = [
  "quote",
  "unicode-xid",
 ]
+
+[[package]]
+name = "totems"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ced1de49b4b4739691bea1784503e2bda0466b98ce2988307594058a8d57e16a"
 
 [[package]]
 name = "unicode-xid"

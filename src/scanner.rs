@@ -86,6 +86,44 @@ pub struct Token<'a> {
 //     };
 // }
 
+trait IsLoxDigit {
+    fn is_lox_digit(&self) -> bool;
+}
+
+impl IsLoxDigit for char {
+    fn is_lox_digit(&self) -> bool {
+        *self >= '0' && *self <= '9'
+    }
+}
+
+impl IsLoxDigit for Option<char> {
+    fn is_lox_digit(&self) -> bool {
+        if let Some(c) = self {
+            return c.is_lox_digit();
+        }
+        false
+    }
+}
+
+trait IsLoxAlpha {
+    fn is_lox_alpha(&self) -> bool;
+}
+
+impl IsLoxAlpha for char {
+    fn is_lox_alpha(&self) -> bool {
+        (*self >= 'a' && *self <= 'z') || (*self >= 'A' && *self <= 'Z') || *self == '_'
+    }
+}
+
+impl IsLoxAlpha for Option<char> {
+    fn is_lox_alpha(&self) -> bool {
+        if let Some(c) = self {
+            return c.is_lox_alpha();
+        }
+        false
+    }
+}
+
 // TODO - there's no way this is the right way to create a string slice from iterators.
 impl<'a> Scanner<'a> {
     // TODO - self is mut why? cause peek is mut?
@@ -106,78 +144,83 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn is_at_end(&mut self) -> bool {
-        return self.current.peek() == None;
-    }
-
-    fn advance(&mut self) -> char {
-        self.current.next().unwrap().1
+    // All these "char" returning functions should return options. Then no need for unwrap!
+    // and its more rusty
+    fn advance(&mut self) -> Option<char> {
+        // Kind of cludgy, but the caller really doesn't want the usize. But we
+        // need it to construct the string slice later.
+        match self.current.next() {
+            Some(x) => Option::Some(x.1),
+            None => None,
+        }
     }
 
     fn match_character(&mut self, character: char) -> bool {
-        if self.is_at_end() {
-            return false;
+        match self.peek() {
+            Some(x) => {
+                if x == character {
+                    self.current.next();
+                    return true;
+                }
+            }
+            None => (),
         }
 
-        if self.current.peek().unwrap().1 != character {
-            return false;
+        false
+    }
+
+    fn peek(&mut self) -> Option<char> {
+        match self.current.peek() {
+            Some(x) => Option::Some(x.1),
+            None => None,
         }
-
-        self.current.next();
-        return true;
     }
 
-    fn peek(&mut self) -> char {
-        self.current.peek().unwrap().1
-    }
-
-    fn peek_next(&self) -> char {
+    fn peek_next(&self) -> Option<char> {
         let next = self.current.clone().skip(1).next();
 
-        if next == None {
-            return '\0';
+        match next {
+            Some(x) => Option::Some(x.1),
+            None => None,
         }
-
-        next.unwrap().1
     }
 
     fn skip_whitespace(&mut self) {
         loop {
-            if self.is_at_end() {
-                return;
-            }
-
-            let c = self.peek();
-
-            match c {
-                '\n' => {
-                    self.line += 1;
-                    self.advance();
-                }
-                x if x.is_whitespace() => {
-                    self.advance();
-                }
-                '/' => {
-                    if self.peek_next() == '/' {
-                        // Comments eat everything until the next line.
-                        while self.peek() != '\n' && !self.is_at_end() {
+            match self.peek() {
+                Some(c) => {
+                    match c {
+                        '\n' => {
+                            self.line += 1;
                             self.advance();
                         }
-                    } else {
-                        return;
+                        x if x.is_whitespace() => {
+                            self.advance();
+                        }
+                        '/' => {
+                            if self.peek_next() == Some('/') {
+                                // Comments eat everything until the next line.
+                                loop {
+                                    match self.peek() {
+                                        Some('\n') => {
+                                            break;
+                                        }
+                                        Some(_) => {
+                                            self.advance();
+                                        }
+                                        None => return,
+                                    }
+                                }
+                            } else {
+                                return;
+                            }
+                        }
+                        _ => return,
                     }
                 }
-                _ => return,
+                None => return,
             }
         }
-    }
-
-    fn is_digit(c: char) -> bool {
-        return c >= '0' && c <= '9';
-    }
-
-    fn is_alpha(c: char) -> bool {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
     }
 
     pub fn scan_token(&mut self) -> Token {
@@ -185,81 +228,75 @@ impl<'a> Scanner<'a> {
 
         self.start = self.current.clone();
 
-        if self.is_at_end() {
-            return Token {
+        // Instead, scan token should return an iterator/option. Basically
+        // the scanner should be an iterator that takes a string and output
+        // is Iterator<Item = Token>. Then next_token can return an option
+        // and there can't be a misuse of it.
+        //
+
+        match self.advance() {
+            Some(c) => {
+                match c {
+                    '(' => return self.make_token(TokenType::TokenLeftParen),
+                    ')' => return self.make_token(TokenType::TokenRightParen),
+                    '{' => return self.make_token(TokenType::TokenLeftBrace),
+                    '}' => return self.make_token(TokenType::TokenRightBrace),
+                    ';' => return self.make_token(TokenType::TokenSemicolon),
+                    ',' => return self.make_token(TokenType::TokenComma),
+                    '.' => return self.make_token(TokenType::TokenDot),
+                    '-' => return self.make_token(TokenType::TokenMinus),
+                    '+' => return self.make_token(TokenType::TokenPlus),
+                    '/' => return self.make_token(TokenType::TokenSlash),
+                    '*' => return self.make_token(TokenType::TokenStar),
+                    // TODO - Probably can macro these double character matches too.
+                    '!' => {
+                        if self.match_character('=') {
+                            return self.make_token(TokenType::TokenBangEqual);
+                        } else {
+                            return self.make_token(TokenType::TokenBang);
+                        }
+                    }
+                    '=' => {
+                        if self.match_character('=') {
+                            return self.make_token(TokenType::TokenEqualEqual);
+                        } else {
+                            return self.make_token(TokenType::TokenEqual);
+                        }
+                    }
+                    '<' => {
+                        if self.match_character('=') {
+                            return self.make_token(TokenType::TokenLessEqual);
+                        } else {
+                            return self.make_token(TokenType::TokenLess);
+                        }
+                    }
+                    '>' => {
+                        if self.match_character('=') {
+                            return self.make_token(TokenType::TokenGreaterEqual);
+                        } else {
+                            return self.make_token(TokenType::TokenGreater);
+                        }
+                    }
+                    '"' => {
+                        return self.make_string_token();
+                    }
+                    x if x.is_lox_digit() => {
+                        return self.make_number_token();
+                    }
+                    x if x.is_lox_alpha() => {
+                        return self.make_identifier_token();
+                    }
+                    _ => {}
+                }
+
+                self.make_error_token("Unexpected character.")
+            }
+            None => Token {
                 string: "",
                 line: self.line,
                 token_type: TokenType::TokenEof,
-            };
-
-            // calling common make_token panics, because we're at the end for
-            // the iterators (duh)
-            //
-            // return self.make_token(TokenType::TokenEof);
-            //
-            // Instead, scan token should return an iterator/option. Basically
-            // the scanner should be an iterator that takes a string and output
-            // is Iterator<Item = Token>. Then next_token can return an option
-            // and there can't be a misuse of it.
-            //
+            },
         }
-
-        let c = self.advance();
-
-        match c {
-            '(' => return self.make_token(TokenType::TokenLeftParen),
-            ')' => return self.make_token(TokenType::TokenRightParen),
-            '{' => return self.make_token(TokenType::TokenLeftBrace),
-            '}' => return self.make_token(TokenType::TokenRightBrace),
-            ';' => return self.make_token(TokenType::TokenSemicolon),
-            ',' => return self.make_token(TokenType::TokenComma),
-            '.' => return self.make_token(TokenType::TokenDot),
-            '-' => return self.make_token(TokenType::TokenMinus),
-            '+' => return self.make_token(TokenType::TokenPlus),
-            '/' => return self.make_token(TokenType::TokenSlash),
-            '*' => return self.make_token(TokenType::TokenStar),
-            // TODO - Probably can macro these double character matches too.
-            '!' => {
-                if self.match_character('=') {
-                    return self.make_token(TokenType::TokenBangEqual);
-                } else {
-                    return self.make_token(TokenType::TokenBang);
-                }
-            }
-            '=' => {
-                if self.match_character('=') {
-                    return self.make_token(TokenType::TokenEqualEqual);
-                } else {
-                    return self.make_token(TokenType::TokenEqual);
-                }
-            }
-            '<' => {
-                if self.match_character('=') {
-                    return self.make_token(TokenType::TokenLessEqual);
-                } else {
-                    return self.make_token(TokenType::TokenLess);
-                }
-            }
-            '>' => {
-                if self.match_character('=') {
-                    return self.make_token(TokenType::TokenGreaterEqual);
-                } else {
-                    return self.make_token(TokenType::TokenGreater);
-                }
-            }
-            '"' => {
-                return self.make_string_token();
-            }
-            x if Scanner::is_digit(x) => {
-                return self.make_number_token();
-            }
-            x if Scanner::is_alpha(x) => {
-                return self.make_identifier_token();
-            }
-            _ => {}
-        }
-
-        self.make_error_token("Unexpected character.")
     }
 
     fn make_error_token(&self, string: &'a str) -> Token {
@@ -271,35 +308,42 @@ impl<'a> Scanner<'a> {
     }
 
     fn make_string_token(&mut self) -> Token {
-        while self.peek() != '"' && !self.is_at_end() {
-            if self.peek() == '\n' {
-                self.line += 1;
+        loop {
+            match self.peek() {
+                Some(c) => {
+                    if c == '"' {
+                        // The closing quote.
+                        self.advance();
+                        return self.make_token(TokenType::TokenString);
+                    }
+
+                    if c == '\n' {
+                        self.line += 1;
+                    }
+
+                    self.advance();
+                }
+
+                None => {
+                    // Didn't find a string terminator.
+                    return self.make_error_token("Unterminated string.");
+                }
             }
-
-            self.advance();
         }
-
-        if self.is_at_end() {
-            return self.make_error_token("Unterminated string.");
-        }
-
-        // The closing quote.
-        self.advance();
-
-        self.make_token(TokenType::TokenString)
     }
 
     fn make_number_token(&mut self) -> Token {
-        while self.peek().is_numeric() {
+        // Consume the first full part of the number
+        while self.peek().is_lox_digit() {
             self.advance();
         }
 
         // Look for a fractional part.
-        if self.peek() == '.' && Scanner::is_digit(self.peek_next()) {
+        if self.peek() == Some('.') && self.peek_next().is_lox_digit() {
             // Consume the ".".
             self.advance();
 
-            while self.peek().is_numeric() {
+            while self.peek().is_lox_digit() {
                 self.advance();
             }
         }
@@ -311,6 +355,7 @@ impl<'a> Scanner<'a> {
     fn check_keyword(mut iter: std::iter::Peekable<std::str::CharIndices<'a>>, rest: &str) -> bool {
         // First check length. If they don't match, can't possibly match.
         // TODO - how to check length without iterating through iterator, impossible??
+        // Is it even better to do this than just checking char by char?
         if (iter.clone().count()) != rest.len() {
             return false;
         }
@@ -327,7 +372,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn make_identifier_token(&mut self) -> Token {
-        while Scanner::is_alpha(self.peek()) || Scanner::is_digit(self.peek()) {
+        while self.peek().is_lox_digit() || self.peek().is_lox_alpha() {
             self.advance();
         }
 
@@ -390,18 +435,80 @@ impl<'a> Scanner<'a> {
 #[cfg(test)]
 mod tests {
     use super::Scanner;
+    use totems::assert_none;
+
+    macro_rules! assert_eq_char {
+        ($left:expr, $right:expr) => {
+            assert_eq!($left, Some($right))
+        };
+    }
 
     #[test]
-
     fn peek_next_test() {
         let string = String::from("1.2");
         let mut scanner = Scanner::new(&string);
 
-        assert_eq!(scanner.peek(), '1');
-        assert_eq!(scanner.peek_next(), '.');
+        assert_eq!(scanner.peek(), Some('1'));
+        assert_eq!(scanner.peek_next(), Some('.'));
 
-        assert_eq!(scanner.advance(), '1');
-        assert_eq!(scanner.peek(), '.');
-        assert_eq!(scanner.peek_next(), '2');
+        assert_eq!(scanner.advance(), Some('1'));
+        assert_eq!(scanner.peek(), Some('.'));
+        assert_eq!(scanner.peek_next(), Some('2'));
+
+        assert_eq_char!(scanner.advance(), '.');
+        assert_eq_char!(scanner.advance(), '2');
+
+        assert_none!(scanner.advance());
+        assert_none!(scanner.advance());
+        assert_none!(scanner.peek());
+        assert_none!(scanner.peek_next());
     }
+
+    #[test]
+    fn skip_whitespace_test() {
+        let string =
+            String::from("    abc  \n\t   \n def  /qafe \n // ddd eeeee gasdfwe \t \t \n x");
+        let mut scanner = Scanner::new(&string);
+
+        // should skip up to abc
+        assert_eq_char!(scanner.peek(), ' ');
+        scanner.skip_whitespace();
+        assert_eq_char!(scanner.advance(), 'a');
+        assert_eq_char!(scanner.advance(), 'b');
+        assert_eq_char!(scanner.advance(), 'c');
+
+        // should skip up to def, with line incremented by two.
+        scanner.skip_whitespace();
+        assert_eq!(scanner.line, 3);
+        assert_eq_char!(scanner.advance(), 'd');
+        assert_eq_char!(scanner.advance(), 'e');
+        assert_eq_char!(scanner.advance(), 'f');
+
+        // skip up to /
+        scanner.skip_whitespace();
+        assert_eq_char!(scanner.advance(), '/');
+        assert_eq_char!(scanner.advance(), 'q');
+        assert_eq_char!(scanner.advance(), 'a');
+        assert_eq_char!(scanner.advance(), 'f');
+        assert_eq_char!(scanner.advance(), 'e');
+
+        // skip to the last x
+        scanner.skip_whitespace();
+        assert_eq!(scanner.line, 5);
+        assert_eq_char!(scanner.advance(), 'x');
+        assert_none!(scanner.advance());
+
+        let string = String::from("//a\n\n\n//\nx");
+        scanner = Scanner::new(&string);
+
+        // should skip all the way up to x.
+        scanner.skip_whitespace();
+        assert_eq!(scanner.line, 5);
+        assert_eq_char!(scanner.advance(), 'x');
+        assert_none!(scanner.advance());
+    }
+
+    // test digit trait
+
+    // test parsing number tokens
 }
