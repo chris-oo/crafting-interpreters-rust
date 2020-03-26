@@ -392,7 +392,7 @@ impl<'a> Scanner<'a> {
             Some((_, 'v')) => make_keyword!(iter, "ar", TokenVar),
             Some((_, 'w')) => make_keyword!(iter, "hile", TokenWhile),
             Some(_) => (),
-            None => return self.make_error_token("Identifier parsing called on end of string."), // TODO - feels like panic is more appropriate here. It's a logic bug.
+            None => panic!("Identifier parsing called on invalid start."),
         }
 
         self.make_token(TokenType::TokenIdentifier)
