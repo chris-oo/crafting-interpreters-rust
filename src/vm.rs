@@ -12,17 +12,17 @@ pub enum InterpretResult {
     InterpretRuntimeError,
 }
 
-pub struct VM<'a> {
-    chunk: Option<&'a Chunk>,
+pub struct VM {
+    chunk: Chunk,
     ip: usize,
     stack: [Value; STACK_MAX],
     stack_top: usize,
 }
 
-impl<'a> VM<'a> {
+impl VM {
     pub fn new() -> Self {
         VM {
-            chunk: Option::None,
+            chunk: Chunk::new(),
             ip: 0,
             stack: [0.0; STACK_MAX],
             stack_top: 0,
@@ -34,9 +34,7 @@ impl<'a> VM<'a> {
     }
 
     pub fn interpret(&mut self, source: &String) -> Result<(), InterpretResult> {
-        let chunk = compiler::compile(source)?;
-
-        self.chunk = Some(&chunk);
+        self.chunk = compiler::compile(source)?;
         self.ip = 0;
 
         self.run()
@@ -53,14 +51,14 @@ impl<'a> VM<'a> {
     }
 
     fn read_byte(&mut self) -> u8 {
-        let byte = self.chunk.as_ref().unwrap().code[self.ip];
+        let byte = self.chunk.code[self.ip];
         self.ip += 1;
         byte
     }
 
     fn read_constant(&mut self) -> Value {
         let index = self.read_byte();
-        self.chunk.as_ref().unwrap().constants[index as usize]
+        self.chunk.constants[index as usize]
     }
 
     fn run(&mut self) -> Result<(), InterpretResult> {
@@ -82,10 +80,7 @@ impl<'a> VM<'a> {
                 }
                 print!("\n");
 
-                self.chunk
-                    .as_ref()
-                    .unwrap()
-                    .dissasemble_instruction(self.ip);
+                self.chunk.dissasemble_instruction(self.ip);
             }
 
             let instruction = num::FromPrimitive::from_u8(self.read_byte());
