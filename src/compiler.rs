@@ -1,10 +1,13 @@
 use crate::bytecode::Opcodes;
+use crate::bytecode::Value;
 use crate::chunk::Chunk;
 use crate::scanner;
 use crate::scanner::Scanner;
 use crate::scanner::Token;
 use crate::scanner::TokenType;
 use crate::vm::InterpretResult;
+
+use std::str::FromStr;
 
 struct Parser<'a> {
     scanner: Scanner<'a>,
@@ -13,6 +16,47 @@ struct Parser<'a> {
     had_error: bool,
     panic_mode: bool,
     compiling_chunk: Chunk,
+}
+
+enum Precedence {
+    PrecNone,
+    PrecAssignment, // =
+    PrecOr,         // or
+    PrecAnd,        // and
+    PrecEquality,   // == !=
+    PrecComparison, // < > <= >=
+    PrecTerm,       // + -
+    PrecFactor,     // * /
+    PrecUnary,      // ! -
+    PrecCall,       // . ()
+    PrecPrimary,
+}
+
+struct ParseRule {
+    prefix: Option<fn(&mut Parser)>,
+    infix: Option<fn(&mut Parser)>,
+    precedence: Precedence,
+}
+
+impl Precedence {
+    fn get_next_highest(&self) -> Self {
+        // This is the equivalent in C as:
+        // (Precedence)(rule->precedence + 1)
+        // TODO - better way to do this?
+        match self {
+            Precedence::PrecNone => Precedence::PrecAssignment,
+            Precedence::PrecAssignment => Precedence::PrecOr,
+            Precedence::PrecOr => Precedence::PrecAnd,
+            Precedence::PrecAnd => Precedence::PrecEquality,
+            Precedence::PrecEquality => Precedence::PrecComparison,
+            Precedence::PrecComparison => Precedence::PrecTerm,
+            Precedence::PrecTerm => Precedence::PrecFactor,
+            Precedence::PrecFactor => Precedence::PrecUnary,
+            Precedence::PrecUnary => Precedence::PrecCall,
+            Precedence::PrecCall => Precedence::PrecPrimary,
+            Precedence::PrecPrimary => panic!("tried to upgrade highest"),
+        }
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -59,7 +103,9 @@ impl<'a> Parser<'a> {
         self.error_at_current(message);
     }
 
-    fn expression(&mut self) {}
+    fn expression(&mut self) {
+        self.parse_precedence(Precedence::PrecAssignment);
+    }
 
     fn emit_byte(&mut self, byte: u8) {
         let line = self.previous.line;
@@ -113,6 +159,83 @@ impl<'a> Parser<'a> {
 
         eprint!(": {}\n", message);
         self.had_error = true;
+    }
+
+    fn number(&mut self) {
+        let value =
+            Value::from_str(self.previous.string).expect("number token contained not a number");
+        self.emit_constant(value);
+    }
+
+    fn emit_constant(&mut self, value: Value) {
+        let constant = self.make_constant(value);
+        self.emit_bytes(Opcodes::OpConstant as u8, constant);
+    }
+
+    fn make_constant(&mut self, value: Value) -> u8 {
+        let constant = self.current_chunk().add_constant(value);
+
+        if constant > std::u8::MAX as usize {
+            self.error("Too many constants in one chunk.");
+            return 0;
+        }
+
+        constant as u8
+    }
+
+    fn grouping(&mut self) {
+        self.expression();
+        self.consume(TokenType::TokenRightParen, "Expect ')' after expression.");
+    }
+
+    fn unary(&mut self) {
+        let operator_type = self.previous.token_type;
+
+        // Compile the operand.
+        self.parse_precedence(Precedence::PrecUnary);
+
+        // Emit the operator instruction.
+        match operator_type {
+            TokenType::TokenMinus => self.emit_byte(Opcodes::OpNegate as u8),
+            _ => panic!("Unreachable"),
+        }
+    }
+
+    fn parse_precedence(&mut self, precedence: Precedence) {}
+
+    fn binary(&mut self) {
+        // Remember the operator.
+        let operator_type = self.previous.token_type;
+
+        // Compile the right operand.
+        let rule = self.get_rule(operator_type);
+        self.parse_precedence(rule.precedence.get_next_highest());
+
+        // Emit the operator instruction.
+        match operator_type {
+            TokenType::TokenPlus => self.emit_byte(Opcodes::OpAdd as u8),
+            TokenType::TokenMinus => self.emit_byte(Opcodes::OpSubtract as u8),
+            TokenType::TokenStar => self.emit_byte(Opcodes::OpMultiply as u8),
+            TokenType::TokenSlash => self.emit_byte(Opcodes::OpDivide as u8),
+            _ => panic!("Unreachable"),
+        }
+    }
+
+    fn get_rule(&mut self, token_type: TokenType) -> ParseRule {
+        // NOTE: in C, this was done as a static table of function pointers.
+        // That doesn't work, because having function pointers to member
+        // functions isn't really possible, and is also a really bad design.
+        //
+        // Replace it instead with a match expression.
+        // TODO - does this performance wise match the C lookup table?
+        match token_type {
+            TokenType::TokenLeftParen => ParseRule {
+                prefix: Some(Self::grouping),
+                infix: None,
+                precedence: Precedence::PrecNone,
+            },
+            _ => unimplemented!(),
+        }
     }
 }
 
