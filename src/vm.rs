@@ -8,7 +8,6 @@ const DEBUG_TRACE_EXECUTION: bool = true;
 const STACK_MAX: usize = 256;
 
 pub enum InterpretResult {
-    InterpretOk,
     InterpretCompileError,
     InterpretRuntimeError,
 }

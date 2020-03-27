@@ -50,7 +50,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn consume(&'a mut self, token_type: TokenType, message: &str) {
+    fn consume(&mut self, token_type: TokenType, message: &str) {
         if self.current.token_type == token_type {
             self.advance();
             return;
@@ -62,7 +62,8 @@ impl<'a> Parser<'a> {
     fn expression(&mut self) {}
 
     fn emit_byte(&mut self, byte: u8) {
-        self.current_chunk().write_chunk(byte, self.previous.line);
+        let line = self.previous.line;
+        self.current_chunk().write_chunk(byte, line);
     }
 
     fn emit_bytes(&mut self, byte1: u8, byte2: u8) {
@@ -83,11 +84,15 @@ impl<'a> Parser<'a> {
     }
 
     fn error_at_current(&mut self, message: &str) {
-        self.error_at(&self.current, message);
+        // TODO - how to remove this clone?
+        let token = self.current.clone();
+        self.error_at(&token, message);
     }
 
     fn error(&mut self, message: &str) {
-        self.error_at(&self.previous, message);
+        // TODO - how to remove this clone?
+        let token = self.previous.clone();
+        self.error_at(&token, message);
     }
 
     fn error_at(&mut self, token: &Token, message: &str) {
