@@ -84,18 +84,15 @@ impl<'a> Parser<'a> {
     }
 
     fn error_at_current(&mut self, message: &str) {
-        // TODO - how to remove this clone?
-        let token = self.current.clone();
-        self.error_at(&token, message);
+        self.error_at(self.current, message);
     }
 
     fn error(&mut self, message: &str) {
-        // TODO - how to remove this clone?
-        let token = self.previous.clone();
-        self.error_at(&token, message);
+        self.error_at(self.previous, message);
     }
 
-    fn error_at(&mut self, token: &Token, message: &str) {
+    // TODO - is it possible to borrow the token instead of copying?
+    fn error_at(&mut self, token: Token, message: &str) {
         if self.panic_mode {
             return;
         }

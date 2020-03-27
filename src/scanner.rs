@@ -60,7 +60,7 @@ pub enum TokenType {
 }
 
 // TODO - named struct for every token type seems dumb. How can you just embed these on each type?
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct Token<'a> {
     pub string: &'a str, // The slice that actually holds the string containing the token
     pub line: i32,
@@ -108,7 +108,7 @@ impl IsLoxAlpha for Option<char> {
 // TODO - there's no way this is the right way to create a string slice from iterators.
 impl<'a> Scanner<'a> {
     // TODO - self is mut why? cause peek is mut?
-    fn make_token(&mut self, token_type: TokenType) -> Token {
+    fn make_token(&mut self, token_type: TokenType) -> Token<'a> {
         match (self.start.peek(), self.current.peek()) {
             (Some(start), Some(current)) => Token {
                 string: &self.source[start.0..current.0],
@@ -204,7 +204,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan_token(&mut self) -> Token {
+    pub fn scan_token(&mut self) -> Token<'a> {
         self.skip_whitespace();
 
         self.start = self.current.clone();
@@ -274,7 +274,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn make_error_token(&self, string: &'a str) -> Token {
+    fn make_error_token(&self, string: &'a str) -> Token<'a> {
         Token {
             string: string,
             line: self.line,
@@ -282,7 +282,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn make_string_token(&mut self) -> Token {
+    fn make_string_token(&mut self) -> Token<'a> {
         loop {
             match self.peek() {
                 Some(c) => {
@@ -307,7 +307,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn make_number_token(&mut self) -> Token {
+    fn make_number_token(&mut self) -> Token<'a> {
         // Consume the first full part of the number
         while self.peek().is_lox_digit() {
             self.advance();
@@ -347,7 +347,7 @@ impl<'a> Scanner<'a> {
         return iter.next().as_ref() == self.current.peek();
     }
 
-    fn make_identifier_token(&mut self) -> Token {
+    fn make_identifier_token(&mut self) -> Token<'a> {
         while self.peek().is_lox_digit() || self.peek().is_lox_alpha() {
             self.advance();
         }
