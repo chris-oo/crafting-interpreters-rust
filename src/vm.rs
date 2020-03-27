@@ -1,9 +1,8 @@
 use crate::bytecode::Opcodes;
 use crate::bytecode::Value;
+use crate::bytecode::DEBUG_TRACE_EXECUTION;
 use crate::chunk::Chunk;
 use crate::compiler;
-
-const DEBUG_TRACE_EXECUTION: bool = true;
 
 const STACK_MAX: usize = 256;
 

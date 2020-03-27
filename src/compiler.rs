@@ -1,5 +1,6 @@
 use crate::bytecode::Opcodes;
 use crate::bytecode::Value;
+use crate::bytecode::DEBUG_PRINT_CODE;
 use crate::chunk::Chunk;
 use crate::scanner;
 use crate::scanner::Scanner;
@@ -18,8 +19,9 @@ struct Parser<'a> {
     compiling_chunk: Chunk,
 }
 
+#[derive(PartialOrd, PartialEq)]
 enum Precedence {
-    PrecNone,
+    PrecNone = 0,
     PrecAssignment, // =
     PrecOr,         // or
     PrecAnd,        // and
@@ -32,9 +34,9 @@ enum Precedence {
     PrecPrimary,
 }
 
-struct ParseRule {
-    prefix: Option<fn(&mut Parser)>,
-    infix: Option<fn(&mut Parser)>,
+struct ParseRule<'p, 'a> {
+    prefix: Option<fn(&'p mut Parser<'a>)>,
+    infix: Option<fn(&'p mut Parser<'a>)>,
     precedence: Precedence,
 }
 
@@ -86,7 +88,7 @@ impl<'a> Parser<'a> {
         loop {
             self.current = self.scanner.scan_token();
 
-            if self.current.token_type == TokenType::TokenError {
+            if self.current.token_type != TokenType::TokenError {
                 break;
             }
 
@@ -119,6 +121,10 @@ impl<'a> Parser<'a> {
 
     fn end_compiler(&mut self) {
         self.emit_return();
+
+        if DEBUG_PRINT_CODE && !self.had_error {
+            self.current_chunk().dissasemble("code");
+        }
     }
 
     fn emit_return(&mut self) {
@@ -201,7 +207,27 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_precedence(&mut self, precedence: Precedence) {}
+    fn parse_precedence(&mut self, precedence: Precedence) {
+        self.advance();
+
+        let prefix_rule = self.get_rule(self.previous.token_type).prefix;
+
+        match prefix_rule {
+            Some(rule) => {
+                rule(self);
+
+                while precedence <= self.get_rule(self.current.token_type).precedence {
+                    self.advance();
+                    // TODO - c parser doesn't check null for infix. This would be a parser programming bug.
+                    let infix_rule = self.get_rule(self.previous.token_type).infix.unwrap();
+                    infix_rule(self);
+                }
+            }
+            None => {
+                self.error("Expect expression.");
+            }
+        }
+    }
 
     fn binary(&mut self) {
         // Remember the operator.
@@ -221,20 +247,67 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn get_rule(&mut self, token_type: TokenType) -> ParseRule {
+    #[rustfmt::skip]
+    fn get_rule<'p>(&self, token_type: TokenType) -> ParseRule<'p, 'a> {
         // NOTE: in C, this was done as a static table of function pointers.
-        // That doesn't work, because having function pointers to member
-        // functions isn't really possible, and is also a really bad design.
+        // I was wrong about that not working, it can work. However, it would
+        // require casting the enum back to an integer (seems yuck).
         //
         // Replace it instead with a match expression.
         // TODO - does this performance wise match the C lookup table?
+
+        macro_rules! make_rule {
+            ($prefix:expr, $infix:expr, $precedence:tt) => {
+                ParseRule {
+                    prefix: $prefix,
+                    infix: $infix,
+                    precedence: Precedence::$precedence,
+                }
+            };
+        }
+
+        // This is the big table of rules.
         match token_type {
-            TokenType::TokenLeftParen => ParseRule {
-                prefix: Some(Self::grouping),
-                infix: None,
-                precedence: Precedence::PrecNone,
-            },
-            _ => unimplemented!(),
+            TokenType::TokenLeftParen    => make_rule!(Some(Self::grouping),    None,               PrecNone),
+            TokenType::TokenRightParen   => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenLeftBrace    => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenRightBrace   => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenComma        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenDot          => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenMinus        => make_rule!(Some(Self::unary),       Some(Self::binary), PrecTerm),
+            TokenType::TokenPlus         => make_rule!(None,                    Some(Self::binary), PrecTerm),
+            TokenType::TokenSemicolon    => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenSlash        => make_rule!(None,                    Some(Self::binary), PrecFactor),
+            TokenType::TokenStar         => make_rule!(None,                    Some(Self::binary), PrecFactor),
+            TokenType::TokenBang         => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenBangEqual    => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenEqual        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenEqualEqual   => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenGreater      => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenGreaterEqual => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenLess         => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenLessEqual    => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenIdentifier   => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenString       => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenNumber       => make_rule!(Some(Self::number),      None,               PrecNone),
+            TokenType::TokenAnd          => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenClass        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenElse         => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenFalse        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenFor          => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenFun          => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenIf           => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenNil          => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenOr           => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenPrint        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenReturn       => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenSuper        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenThis         => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenTrue         => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenVar          => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenWhile        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenError        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenEof          => make_rule!(None,                    None,               PrecNone),
         }
     }
 }
