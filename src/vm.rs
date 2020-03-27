@@ -34,9 +34,13 @@ impl<'a> VM<'a> {
         self.stack_top = 0;
     }
 
-    pub fn interpret(&mut self, source: &String) -> InterpretResult {
-        compiler::compile(source);
-        InterpretResult::InterpretOk
+    pub fn interpret(&mut self, source: &String) -> Result<(), InterpretResult> {
+        let chunk = compiler::compile(source)?;
+
+        self.chunk = Some(&chunk);
+        self.ip = 0;
+
+        self.run()
     }
 
     fn push(&mut self, value: Value) {
@@ -60,7 +64,7 @@ impl<'a> VM<'a> {
         self.chunk.as_ref().unwrap().constants[index as usize]
     }
 
-    fn run(&mut self) -> InterpretResult {
+    fn run(&mut self) -> Result<(), InterpretResult> {
         macro_rules! binary_op {
             ($op:tt) => {
                 let b = self.pop();
@@ -90,7 +94,7 @@ impl<'a> VM<'a> {
             match instruction {
                 Some(Opcodes::OpReturn) => {
                     println!("{:?}", self.pop());
-                    return InterpretResult::InterpretOk;
+                    return Ok(());
                 }
 
                 Some(Opcodes::OpConstant) => {
@@ -114,7 +118,7 @@ impl<'a> VM<'a> {
                     binary_op!(/);
                 }
                 // Some(_) => unimplemented!("Opcode not implemented"),
-                None => return InterpretResult::InterpretRuntimeError,
+                None => return Err(InterpretResult::InterpretRuntimeError),
             }
         }
     }

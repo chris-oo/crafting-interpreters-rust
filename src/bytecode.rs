@@ -1,6 +1,7 @@
 pub type Value = f64;
 
-#[derive(FromPrimitive)]
+#[derive(FromPrimitive, ToPrimitive)]
+#[repr(u8)]
 pub enum Opcodes {
     OpReturn,
     OpConstant,

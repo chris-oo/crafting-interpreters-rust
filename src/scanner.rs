@@ -7,7 +7,7 @@ pub struct Scanner<'a> {
     line: i32,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum TokenType {
     // Single-character tokens.
     TokenLeftParen,
@@ -60,7 +60,7 @@ pub enum TokenType {
 }
 
 // TODO - named struct for every token type seems dumb. How can you just embed these on each type?
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Token<'a> {
     pub string: &'a str, // The slice that actually holds the string containing the token
     pub line: i32,
