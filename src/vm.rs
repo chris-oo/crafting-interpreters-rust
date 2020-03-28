@@ -23,13 +23,24 @@ impl VM {
         VM {
             chunk: Chunk::new(),
             ip: 0,
-            stack: [0.0; STACK_MAX],
+            stack: [Value::ValNil; STACK_MAX],
             stack_top: 0,
         }
     }
 
     fn reset_stack(&mut self) {
         self.stack_top = 0;
+    }
+
+    // C took a format string, but rust you can call format!() instead. This
+    // means the C style runtime_error function should be a macro instead?
+    fn runtime_error_formatted(&mut self, message: &str) {
+        eprintln!("{}", message);
+
+        let line = self.chunk.lines[self.ip - 1];
+        eprintln!("[line {}] in script", line);
+
+        self.reset_stack();
     }
 
     pub fn interpret(&mut self, source: &String) -> Result<(), InterpretResult> {
@@ -49,6 +60,10 @@ impl VM {
         self.stack[self.stack_top]
     }
 
+    fn peek(&self, distance: usize) -> Value {
+        self.stack[self.stack_top - 1 - distance]
+    }
+
     fn read_byte(&mut self) -> u8 {
         let byte = self.chunk.code[self.ip];
         self.ip += 1;
@@ -62,10 +77,19 @@ impl VM {
 
     fn run(&mut self) -> Result<(), InterpretResult> {
         macro_rules! binary_op {
-            ($op:tt) => {
-                let b = self.pop();
-                let a = self.pop();
-                self.push(a $op b);
+            ($value_type:tt, $op:tt) => {
+                match (self.peek(0), self.peek(1)) {
+                    (Value::ValNumber(b), Value::ValNumber(a)) => {
+                        // The match arm got the operand values, so just pop twice.
+                        self.pop();
+                        self.pop();
+                        self.push(Value::$value_type(a $op b));
+                    }
+                    _ => {
+                        self.runtime_error_formatted("Operands must be numbers.");
+                        return Err(InterpretResult::InterpretRuntimeError);
+                    }
+                }
             };
         }
 
@@ -74,7 +98,7 @@ impl VM {
                 print!("          ");
                 let mut i = 0;
                 while i < self.stack_top {
-                    print!("[{:?}]", self.stack[i]);
+                    print!("[{}]", self.stack[i]);
                     i += 1;
                 }
                 print!("\n");
@@ -86,7 +110,7 @@ impl VM {
 
             match instruction {
                 Some(Opcodes::OpReturn) => {
-                    println!("{:?}", self.pop());
+                    println!("{}", self.pop());
                     return Ok(());
                 }
 
@@ -94,21 +118,40 @@ impl VM {
                     let constant = self.read_constant();
                     self.push(constant);
                 }
-                Some(Opcodes::OpNegate) => {
-                    let value = -self.pop();
-                    self.push(value);
+                Some(Opcodes::OpNegate) => match self.peek(0) {
+                    Value::ValNumber(x) => {
+                        self.pop();
+                        self.push(Value::ValNumber(-x));
+                    }
+                    _ => {
+                        self.runtime_error_formatted("Operand must be a number.");
+                        return Err(InterpretResult::InterpretRuntimeError);
+                    }
+                },
+                Some(Opcodes::OpNil) => {
+                    self.push(Value::ValNil);
+                }
+                Some(Opcodes::OpTrue) => {
+                    self.push(Value::ValBool(true));
+                }
+                Some(Opcodes::OpFalse) => {
+                    self.push(Value::ValBool(false));
                 }
                 Some(Opcodes::OpAdd) => {
-                    binary_op!(+);
+                    binary_op!(ValNumber, +);
                 }
                 Some(Opcodes::OpSubtract) => {
-                    binary_op!(-);
+                    binary_op!(ValNumber, -);
                 }
                 Some(Opcodes::OpMultiply) => {
-                    binary_op!(*);
+                    binary_op!(ValNumber, *);
                 }
                 Some(Opcodes::OpDivide) => {
-                    binary_op!(/);
+                    binary_op!(ValNumber, /);
+                }
+                Some(Opcodes::OpNot) => {
+                    let value = Value::ValBool(self.pop().is_falsey());
+                    self.push(value);
                 }
                 // Some(_) => unimplemented!("Opcode not implemented"),
                 None => return Err(InterpretResult::InterpretRuntimeError),

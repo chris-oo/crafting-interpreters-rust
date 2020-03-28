@@ -168,8 +168,9 @@ impl<'a> Parser<'a> {
     }
 
     fn number(&mut self) {
-        let value =
-            Value::from_str(self.previous.string).expect("number token contained not a number");
+        let value = Value::ValNumber(
+            f64::from_str(self.previous.string).expect("number token contained not a number"),
+        );
         self.emit_constant(value);
     }
 
@@ -202,6 +203,7 @@ impl<'a> Parser<'a> {
 
         // Emit the operator instruction.
         match operator_type {
+            TokenType::TokenBang => self.emit_byte(Opcodes::OpNot as u8),
             TokenType::TokenMinus => self.emit_byte(Opcodes::OpNegate as u8),
             _ => panic!("Unreachable"),
         }
@@ -218,7 +220,7 @@ impl<'a> Parser<'a> {
 
                 while precedence <= self.get_rule(self.current.token_type).precedence {
                     self.advance();
-                    // TODO - c parser doesn't check null for infix. This would be a parser programming bug.
+                    // TODO - c parser doesn't check null for infix. This would be a parser rules bug (aka table is wrong).
                     let infix_rule = self.get_rule(self.previous.token_type).infix.unwrap();
                     infix_rule(self);
                 }
@@ -243,6 +245,15 @@ impl<'a> Parser<'a> {
             TokenType::TokenMinus => self.emit_byte(Opcodes::OpSubtract as u8),
             TokenType::TokenStar => self.emit_byte(Opcodes::OpMultiply as u8),
             TokenType::TokenSlash => self.emit_byte(Opcodes::OpDivide as u8),
+            _ => panic!("Unreachable"),
+        }
+    }
+
+    fn literal(&mut self) {
+        match self.previous.token_type {
+            TokenType::TokenFalse => self.emit_byte(Opcodes::OpFalse as u8),
+            TokenType::TokenNil => self.emit_byte(Opcodes::OpNil as u8),
+            TokenType::TokenTrue => self.emit_byte(Opcodes::OpTrue as u8),
             _ => panic!("Unreachable"),
         }
     }
@@ -279,7 +290,7 @@ impl<'a> Parser<'a> {
             TokenType::TokenSemicolon    => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenSlash        => make_rule!(None,                    Some(Self::binary), PrecFactor),
             TokenType::TokenStar         => make_rule!(None,                    Some(Self::binary), PrecFactor),
-            TokenType::TokenBang         => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenBang         => make_rule!(Some(Self::unary),       None,               PrecNone),
             TokenType::TokenBangEqual    => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenEqual        => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenEqualEqual   => make_rule!(None,                    None,               PrecNone),
@@ -293,17 +304,17 @@ impl<'a> Parser<'a> {
             TokenType::TokenAnd          => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenClass        => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenElse         => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenFalse        => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenFalse        => make_rule!(Some(Self::literal),     None,               PrecNone),
             TokenType::TokenFor          => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenFun          => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenIf           => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenNil          => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenNil          => make_rule!(Some(Self::literal),     None,               PrecNone),
             TokenType::TokenOr           => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenPrint        => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenReturn       => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenSuper        => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenThis         => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenTrue         => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenTrue         => make_rule!(Some(Self::literal),     None,               PrecNone),
             TokenType::TokenVar          => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenWhile        => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenError        => make_rule!(None,                    None,               PrecNone),

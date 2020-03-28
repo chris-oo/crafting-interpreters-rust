@@ -65,11 +65,15 @@ impl Chunk {
         match instruction {
             Some(Opcodes::OpReturn) => Chunk::simple_instruction("OP_RETURN", offset),
             Some(Opcodes::OpConstant) => Chunk::constant_instruction("OP_CONSTANT", self, offset),
+            Some(Opcodes::OpNil) => Chunk::simple_instruction("OP_NIL", offset),
+            Some(Opcodes::OpTrue) => Chunk::simple_instruction("OP_TRUE", offset),
+            Some(Opcodes::OpFalse) => Chunk::simple_instruction("OP_FALSE", offset),
             Some(Opcodes::OpNegate) => Chunk::simple_instruction("OP_NEGATE", offset),
             Some(Opcodes::OpAdd) => Chunk::simple_instruction("OP_ADD", offset),
             Some(Opcodes::OpSubtract) => Chunk::simple_instruction("OP_SUBTRACT", offset),
             Some(Opcodes::OpMultiply) => Chunk::simple_instruction("OP_MULTIPLY", offset),
             Some(Opcodes::OpDivide) => Chunk::simple_instruction("OP_DIVIDE", offset),
+            Some(Opcodes::OpNot) => Chunk::simple_instruction("OP_NOT", offset),
             // Some(_) => unimplemented!("Opcode not implemented {}", self.code[offset]),
             None => {
                 print!("Unknown opcode {0}\n", self.code[offset]);
@@ -78,7 +82,7 @@ impl Chunk {
         }
     }
 
-    fn simple_instruction(name: &str, offset: usize) -> u8 {
+    fn simple_instruction(name: &str, _offset: usize) -> u8 {
         println!("{}", name);
         1
     }
