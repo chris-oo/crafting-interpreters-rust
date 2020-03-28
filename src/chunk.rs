@@ -1,5 +1,5 @@
 use crate::bytecode::Opcodes;
-use crate::bytecode::Value;
+use crate::value::Value;
 
 #[derive(Clone)]
 pub struct Chunk {

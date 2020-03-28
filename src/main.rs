@@ -5,7 +5,9 @@ extern crate num_derive;
 mod bytecode;
 mod chunk;
 mod compiler;
+mod debug;
 mod scanner;
+mod value;
 mod vm;
 
 use std::env;

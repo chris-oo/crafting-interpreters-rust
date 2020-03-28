@@ -1,11 +1,11 @@
 use crate::bytecode::Opcodes;
-use crate::bytecode::Value;
 use crate::bytecode::DEBUG_PRINT_CODE;
 use crate::chunk::Chunk;
 use crate::scanner;
 use crate::scanner::Scanner;
 use crate::scanner::Token;
 use crate::scanner::TokenType;
+use crate::value::Value;
 use crate::vm::InterpretResult;
 
 use std::str::FromStr;
