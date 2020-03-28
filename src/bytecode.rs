@@ -16,7 +16,3 @@ pub enum Opcodes {
     OpDivide,
     OpNot,
 }
-
-// TODO probably belongs in debug.rs
-pub const DEBUG_PRINT_CODE: bool = true;
-pub const DEBUG_TRACE_EXECUTION: bool = true;

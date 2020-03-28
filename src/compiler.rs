@@ -1,6 +1,6 @@
 use crate::bytecode::Opcodes;
-use crate::bytecode::DEBUG_PRINT_CODE;
 use crate::chunk::Chunk;
+use crate::debug::DEBUG_PRINT_CODE;
 use crate::scanner;
 use crate::scanner::Scanner;
 use crate::scanner::Token;
