@@ -137,18 +137,17 @@ impl VM {
                 Some(Opcodes::OpFalse) => {
                     self.push(Value::ValBool(false));
                 }
-                Some(Opcodes::OpAdd) => {
-                    binary_op!(ValNumber, +);
+                Some(Opcodes::OpEqual) => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    self.push(Value::ValBool(a == b));
                 }
-                Some(Opcodes::OpSubtract) => {
-                    binary_op!(ValNumber, -);
-                }
-                Some(Opcodes::OpMultiply) => {
-                    binary_op!(ValNumber, *);
-                }
-                Some(Opcodes::OpDivide) => {
-                    binary_op!(ValNumber, /);
-                }
+                Some(Opcodes::OpGreater) => binary_op!(ValBool, >),
+                Some(Opcodes::OpLess) => binary_op!(ValBool, <),
+                Some(Opcodes::OpAdd) => binary_op!(ValNumber, +),
+                Some(Opcodes::OpSubtract) => binary_op!(ValNumber, -),
+                Some(Opcodes::OpMultiply) => binary_op!(ValNumber, *),
+                Some(Opcodes::OpDivide) => binary_op!(ValNumber, /),
                 Some(Opcodes::OpNot) => {
                     let value = Value::ValBool(self.pop().is_falsey());
                     self.push(value);

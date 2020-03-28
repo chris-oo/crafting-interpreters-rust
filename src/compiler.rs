@@ -10,6 +10,12 @@ use crate::vm::InterpretResult;
 
 use std::str::FromStr;
 
+macro_rules! opcode_u8 {
+    ($opcode:tt) => {
+        Opcodes::$opcode as u8
+    };
+}
+
 struct Parser<'a> {
     scanner: Scanner<'a>,
     current: Token<'a>,
@@ -241,19 +247,25 @@ impl<'a> Parser<'a> {
 
         // Emit the operator instruction.
         match operator_type {
-            TokenType::TokenPlus => self.emit_byte(Opcodes::OpAdd as u8),
-            TokenType::TokenMinus => self.emit_byte(Opcodes::OpSubtract as u8),
-            TokenType::TokenStar => self.emit_byte(Opcodes::OpMultiply as u8),
-            TokenType::TokenSlash => self.emit_byte(Opcodes::OpDivide as u8),
+            TokenType::TokenBangEqual => self.emit_bytes(opcode_u8!(OpEqual), opcode_u8!(OpNot)),
+            TokenType::TokenEqualEqual => self.emit_byte(opcode_u8!(OpEqual)),
+            TokenType::TokenGreater => self.emit_byte(opcode_u8!(OpGreater)),
+            TokenType::TokenGreaterEqual => self.emit_bytes(opcode_u8!(OpLess), opcode_u8!(OpNot)),
+            TokenType::TokenLess => self.emit_byte(opcode_u8!(OpLess)),
+            TokenType::TokenLessEqual => self.emit_bytes(opcode_u8!(OpGreater), opcode_u8!(OpNot)),
+            TokenType::TokenPlus => self.emit_byte(opcode_u8!(OpAdd)),
+            TokenType::TokenMinus => self.emit_byte(opcode_u8!(OpSubtract)),
+            TokenType::TokenStar => self.emit_byte(opcode_u8!(OpMultiply)),
+            TokenType::TokenSlash => self.emit_byte(opcode_u8!(OpDivide)),
             _ => panic!("Unreachable"),
         }
     }
 
     fn literal(&mut self) {
         match self.previous.token_type {
-            TokenType::TokenFalse => self.emit_byte(Opcodes::OpFalse as u8),
-            TokenType::TokenNil => self.emit_byte(Opcodes::OpNil as u8),
-            TokenType::TokenTrue => self.emit_byte(Opcodes::OpTrue as u8),
+            TokenType::TokenFalse => self.emit_byte(opcode_u8!(OpFalse)),
+            TokenType::TokenNil => self.emit_byte(opcode_u8!(OpNil)),
+            TokenType::TokenTrue => self.emit_byte(opcode_u8!(OpTrue)),
             _ => panic!("Unreachable"),
         }
     }
@@ -291,13 +303,13 @@ impl<'a> Parser<'a> {
             TokenType::TokenSlash        => make_rule!(None,                    Some(Self::binary), PrecFactor),
             TokenType::TokenStar         => make_rule!(None,                    Some(Self::binary), PrecFactor),
             TokenType::TokenBang         => make_rule!(Some(Self::unary),       None,               PrecNone),
-            TokenType::TokenBangEqual    => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenBangEqual    => make_rule!(None,                    Some(Self::binary), PrecEquality),
             TokenType::TokenEqual        => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenEqualEqual   => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenGreater      => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenGreaterEqual => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenLess         => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenLessEqual    => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenEqualEqual   => make_rule!(None,                    Some(Self::binary), PrecEquality),
+            TokenType::TokenGreater      => make_rule!(None,                    Some(Self::binary), PrecComparison),
+            TokenType::TokenGreaterEqual => make_rule!(None,                    Some(Self::binary), PrecComparison),
+            TokenType::TokenLess         => make_rule!(None,                    Some(Self::binary), PrecComparison),
+            TokenType::TokenLessEqual    => make_rule!(None,                    Some(Self::binary), PrecComparison),
             TokenType::TokenIdentifier   => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenString       => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenNumber       => make_rule!(Some(Self::number),      None,               PrecNone),

@@ -1,7 +1,7 @@
 use std::fmt;
 
 // TODO belongs in value.rs
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value {
     ValBool(bool),
     ValNil,
@@ -36,6 +36,9 @@ pub enum Opcodes {
     OpNil,
     OpTrue,
     OpFalse,
+    OpEqual,
+    OpGreater,
+    OpLess,
     OpNegate,
     OpAdd,
     OpSubtract,
