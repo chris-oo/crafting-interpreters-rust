@@ -4,9 +4,8 @@ use crate::compiler;
 use crate::debug::DEBUG_TRACE_EXECUTION;
 use crate::value::Value;
 
-const STACK_MAX: usize = 256;
-
-pub enum InterpretResult {
+// TODO - split compiler and vm runtime errors
+pub enum InterpretError {
     InterpretCompileError,
     InterpretRuntimeError,
 }
@@ -14,8 +13,7 @@ pub enum InterpretResult {
 pub struct VM {
     chunk: Chunk,
     ip: usize,
-    stack: [Value; STACK_MAX],
-    stack_top: usize,
+    stack: Vec<Value>,
 }
 
 impl VM {
@@ -23,13 +21,12 @@ impl VM {
         VM {
             chunk: Chunk::new(),
             ip: 0,
-            stack: [Value::ValNil; STACK_MAX],
-            stack_top: 0,
+            stack: Vec::new(),
         }
     }
 
     fn reset_stack(&mut self) {
-        self.stack_top = 0;
+        self.stack.clear();
     }
 
     // C took a format string, but rust you can call format!() instead. This
@@ -43,7 +40,7 @@ impl VM {
         self.reset_stack();
     }
 
-    pub fn interpret(&mut self, source: &String) -> Result<(), InterpretResult> {
+    pub fn interpret(&mut self, source: &String) -> Result<(), InterpretError> {
         self.chunk = compiler::compile(source)?;
         self.ip = 0;
 
@@ -51,17 +48,18 @@ impl VM {
     }
 
     fn push(&mut self, value: Value) {
-        self.stack[self.stack_top] = value;
-        self.stack_top += 1;
+        // TODO - enforce some stack limit
+        self.stack.push(value);
     }
 
     fn pop(&mut self) -> Value {
-        self.stack_top -= 1;
-        self.stack[self.stack_top]
+        // TODO - return result type w/ stack error instead of unwrap
+        self.stack.pop().unwrap()
     }
 
-    fn peek(&self, distance: usize) -> Value {
-        self.stack[self.stack_top - 1 - distance]
+    fn peek(&self, distance: usize) -> &Value {
+        // TODO - return result type w/ stack error instead of panic
+        &self.stack[self.stack.len() - 1 - distance]
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -72,22 +70,32 @@ impl VM {
 
     fn read_constant(&mut self) -> Value {
         let index = self.read_byte();
-        self.chunk.constants[index as usize]
+        // TODO - ick cloning constants to push onto the stack. Fine for small
+        // things, terrible for strings.
+        //
+        // It would be better to have the stack have non-owning references. But
+        // then who owns the objects? will need to be solved for GC
+        //
+        // Do we do what clox does and have the VM have a list of objects?
+        self.chunk.constants[index as usize].clone()
     }
 
-    fn run(&mut self) -> Result<(), InterpretResult> {
+    fn run(&mut self) -> Result<(), InterpretError> {
         macro_rules! binary_op {
             ($value_type:tt, $op:tt) => {
-                match (self.peek(0), self.peek(1)) {
+                // NOTE - This is different than clox. In clox we peek twice instead
+                // of popping, for GC tracing.
+                //
+                // There's no GC yet, but this rust implementation (shouldn't?) let
+                // things get freed until destructors are called, and since we keep
+                // the variable alive in the match arm, we should be okay.
+                match (self.pop(), self.pop()) {
                     (Value::ValNumber(b), Value::ValNumber(a)) => {
-                        // The match arm got the operand values, so just pop twice.
-                        self.pop();
-                        self.pop();
                         self.push(Value::$value_type(a $op b));
                     }
                     _ => {
                         self.runtime_error_formatted("Operands must be numbers.");
-                        return Err(InterpretResult::InterpretRuntimeError);
+                        return Err(InterpretError::InterpretRuntimeError);
                     }
                 }
             };
@@ -96,10 +104,8 @@ impl VM {
         loop {
             if DEBUG_TRACE_EXECUTION {
                 print!("          ");
-                let mut i = 0;
-                while i < self.stack_top {
-                    print!("[{}]", self.stack[i]);
-                    i += 1;
+                for value in &self.stack {
+                    print!("[{}]", value);
                 }
                 print!("\n");
 
@@ -118,14 +124,14 @@ impl VM {
                     let constant = self.read_constant();
                     self.push(constant);
                 }
-                Some(Opcodes::OpNegate) => match self.peek(0) {
+                Some(Opcodes::OpNegate) => match self.pop() {
                     Value::ValNumber(x) => {
                         self.pop();
                         self.push(Value::ValNumber(-x));
                     }
                     _ => {
                         self.runtime_error_formatted("Operand must be a number.");
-                        return Err(InterpretResult::InterpretRuntimeError);
+                        return Err(InterpretError::InterpretRuntimeError);
                     }
                 },
                 Some(Opcodes::OpNil) => {
@@ -144,7 +150,20 @@ impl VM {
                 }
                 Some(Opcodes::OpGreater) => binary_op!(ValBool, >),
                 Some(Opcodes::OpLess) => binary_op!(ValBool, <),
-                Some(Opcodes::OpAdd) => binary_op!(ValNumber, +),
+                Some(Opcodes::OpAdd) => match (self.pop(), self.pop()) {
+                    (Value::ValObjString(b), Value::ValObjString(a)) => {
+                        // TODO - What does this optimize to? Seems like it could be very
+                        // bad.
+                        self.push(Value::ValObjString(format!("{}{}", a, b)));
+                    }
+                    (Value::ValNumber(b), Value::ValNumber(a)) => {
+                        self.push(Value::ValNumber(b + a));
+                    }
+                    _ => {
+                        self.runtime_error_formatted("Operand must be two numbers or two strings.");
+                        return Err(InterpretError::InterpretRuntimeError);
+                    }
+                },
                 Some(Opcodes::OpSubtract) => binary_op!(ValNumber, -),
                 Some(Opcodes::OpMultiply) => binary_op!(ValNumber, *),
                 Some(Opcodes::OpDivide) => binary_op!(ValNumber, /),
@@ -153,7 +172,7 @@ impl VM {
                     self.push(value);
                 }
                 // Some(_) => unimplemented!("Opcode not implemented"),
-                None => return Err(InterpretResult::InterpretRuntimeError),
+                None => return Err(InterpretError::InterpretRuntimeError),
             }
         }
     }

@@ -32,7 +32,10 @@ fn repl() {
                     process::exit(0);
                 }
 
-                vm.interpret(&line);
+                // We throw away the result when doing repl.
+                match vm.interpret(&line) {
+                    _ => {}
+                };
 
                 line.clear();
             }
@@ -48,11 +51,11 @@ fn run_file(filename: &String) {
 
     match vm.interpret(&file) {
         Ok(()) => {}
-        Err(vm::InterpretResult::InterpretCompileError) => {
+        Err(vm::InterpretError::InterpretCompileError) => {
             eprintln!("Compiler error reading file!");
             process::exit(65);
         }
-        Err(vm::InterpretResult::InterpretRuntimeError) => {
+        Err(vm::InterpretError::InterpretRuntimeError) => {
             eprintln!("Runtime error executing file!");
             process::exit(70);
         }

@@ -6,7 +6,7 @@ use crate::scanner::Scanner;
 use crate::scanner::Token;
 use crate::scanner::TokenType;
 use crate::value::Value;
-use crate::vm::InterpretResult;
+use crate::vm::InterpretError;
 
 use std::str::FromStr;
 
@@ -180,6 +180,14 @@ impl<'a> Parser<'a> {
         self.emit_constant(value);
     }
 
+    fn string(&mut self) {
+        let str_slice = self.previous.string;
+        // Skip leading and trailing '"' character
+        let value = Value::ValObjString(str_slice[1..str_slice.len() - 1].to_owned());
+
+        self.emit_constant(value);
+    }
+
     fn emit_constant(&mut self, value: Value) {
         let constant = self.make_constant(value);
         self.emit_bytes(Opcodes::OpConstant as u8, constant);
@@ -211,7 +219,7 @@ impl<'a> Parser<'a> {
         match operator_type {
             TokenType::TokenBang => self.emit_byte(Opcodes::OpNot as u8),
             TokenType::TokenMinus => self.emit_byte(Opcodes::OpNegate as u8),
-            _ => panic!("Unreachable"),
+            _ => unreachable!(),
         }
     }
 
@@ -257,7 +265,7 @@ impl<'a> Parser<'a> {
             TokenType::TokenMinus => self.emit_byte(opcode_u8!(OpSubtract)),
             TokenType::TokenStar => self.emit_byte(opcode_u8!(OpMultiply)),
             TokenType::TokenSlash => self.emit_byte(opcode_u8!(OpDivide)),
-            _ => panic!("Unreachable"),
+            _ => unreachable!(),
         }
     }
 
@@ -266,7 +274,7 @@ impl<'a> Parser<'a> {
             TokenType::TokenFalse => self.emit_byte(opcode_u8!(OpFalse)),
             TokenType::TokenNil => self.emit_byte(opcode_u8!(OpNil)),
             TokenType::TokenTrue => self.emit_byte(opcode_u8!(OpTrue)),
-            _ => panic!("Unreachable"),
+            _ => unreachable!(),
         }
     }
 
@@ -311,7 +319,7 @@ impl<'a> Parser<'a> {
             TokenType::TokenLess         => make_rule!(None,                    Some(Self::binary), PrecComparison),
             TokenType::TokenLessEqual    => make_rule!(None,                    Some(Self::binary), PrecComparison),
             TokenType::TokenIdentifier   => make_rule!(None,                    None,               PrecNone),
-            TokenType::TokenString       => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenString       => make_rule!(Some(Self::string),      None,               PrecNone),
             TokenType::TokenNumber       => make_rule!(Some(Self::number),      None,               PrecNone),
             TokenType::TokenAnd          => make_rule!(None,                    None,               PrecNone),
             TokenType::TokenClass        => make_rule!(None,                    None,               PrecNone),
@@ -335,7 +343,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-pub fn compile(source: &String) -> Result<Chunk, InterpretResult> {
+pub fn compile(source: &String) -> Result<Chunk, InterpretError> {
     let mut parser = Parser::new(source);
 
     parser.advance();
@@ -344,7 +352,7 @@ pub fn compile(source: &String) -> Result<Chunk, InterpretResult> {
     parser.end_compiler();
 
     if parser.had_error {
-        return Err(InterpretResult::InterpretCompileError);
+        return Err(InterpretError::InterpretCompileError);
     }
 
     Ok(parser.compiling_chunk)
