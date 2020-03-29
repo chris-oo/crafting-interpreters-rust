@@ -71,12 +71,13 @@ pub struct LoxString {
 impl LoxString {
     // Concatenate two strings, returning a new LoxString.
     fn concatenate(table: &mut LoxStringTable, left: &LoxString, right: &LoxString) -> Self {
-        // // First, build a new Box containing the result of both strings.
-        // let refcount: Rc<String> = Rc::new(format!("{}{}", left.refcount, right.refcount));
+        // First, build a new Box containing the result of both strings.
+        // TODO - would manually making a box of the right size be better? This potentially goes through one realloc.
+        // let new_string = Box::new([left.as_str()..right.as_str().len()]);
+        let new_string = format!("{}{}", left.as_str(), right.as_str()).into_boxed_str();
 
-        // // Returned the interned string from the table.
-        // table.allocate_string_from_rc(&refcount)
-        unimplemented!()
+        // Returned the interned string from the table.
+        table.allocate_string_from_box(new_string)
     }
 
     pub fn as_str(&self) -> &str {
