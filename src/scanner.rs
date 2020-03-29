@@ -143,10 +143,11 @@ impl<'a> Scanner<'a> {
     fn advance(&mut self) -> Option<char> {
         // Kind of cludgy, but the caller really doesn't want the usize. But we
         // need it to construct the string slice later.
-        match self.current.next() {
-            Some((_, x)) => Option::Some(x),
-            None => None,
-        }
+        // match self.current.next() {
+        //     Some((_, x)) => Option::Some(x),
+        //     None => None,
+        // }
+        self.current.next().map(|(_, x)| x)
     }
 
     // Consume a character if it matches the supplied one, returning true or false if it matched.

@@ -6,6 +6,7 @@ mod bytecode;
 mod chunk;
 mod compiler;
 mod debug;
+mod lox_string_table;
 mod scanner;
 mod value;
 mod vm;
