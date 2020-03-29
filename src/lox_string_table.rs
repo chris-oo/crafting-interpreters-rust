@@ -70,6 +70,10 @@ pub struct LoxString {
 
 impl LoxString {
     pub fn as_str(&self) -> &str {
+        // Must not be invalidated
+        // TODO - all these panics really mean Rc ownership should be used instead,
+        // or this type should return Option(&str).
+        assert_ne!(self.entry.get(), ptr::null_mut());
         unsafe { &*self.string }
     }
 }
@@ -209,10 +213,10 @@ impl LoxStringTable {
     //
     // TODO - return Result type vs panic?
     pub fn remove_string(&mut self, string: &LoxString) {
-        // Check first that this even exists in the table.
+        // Take the string, it should exist.
         let entry = self
             .table
-            .get(string.as_str())
+            .take(string.as_str())
             .expect("Asked to remove a string not present");
 
         // This must be the last owner. Manually clear the last owner, and
@@ -221,9 +225,6 @@ impl LoxStringTable {
         assert_eq!(entry.refcount.replace(0), 1);
         let entry_ptr = string.entry.replace(ptr::null());
         assert_eq!(entry.as_ref() as *const InternalStringEntry, entry_ptr);
-
-        // Removal must succeed
-        assert!(self.table.remove(string.as_str()) == true);
     }
 }
 
@@ -256,25 +257,34 @@ mod tests {
             assert_eq!(*(*different.entry.get()).refcount.borrow(), 1);
         }
 
+        let raw_entry_ptr = first.entry.get();
+
         // Force some hashmap reallocations, then check everything again.
         table.table.shrink_to_fit();
         table.table.reserve(100000);
         table.table.shrink_to_fit();
 
+        let fourth = table.allocate_string_from_str("abcd");
+
         assert_eq!(first, second);
         assert_eq!(first, third);
         assert_eq!(second, third);
+        assert_eq!(first, fourth);
 
         // sanity check that the internals match
         assert_eq!(first.as_str(), "abcd");
         assert_eq!(first.entry.get(), second.entry.get());
+        assert_eq!(first.entry.get(), raw_entry_ptr);
+        assert_eq!(first, fourth);
+        assert_eq!(first.entry.get(), fourth.entry.get());
 
         assert_ne!(first, different);
         assert_eq!(table.table.len(), 2);
 
         // Check refcounts
         unsafe {
-            assert_eq!(*(*first.entry.get()).refcount.borrow(), 3);
+            assert_eq!(*(*first.entry.get()).refcount.borrow(), 4);
+            assert_eq!(*(*fourth.entry.get()).refcount.borrow(), 4);
             assert_eq!(*(*different.entry.get()).refcount.borrow(), 1);
         }
 
