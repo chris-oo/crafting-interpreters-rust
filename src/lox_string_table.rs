@@ -45,7 +45,7 @@ impl PartialEq for InternalStringEntry {
 // This allows us to search the hashmap using &str instead of InternalStringEntries.
 impl Borrow<str> for Box<InternalStringEntry> {
     fn borrow(&self) -> &str {
-        &*&*self
+        &*self
     }
 }
 
