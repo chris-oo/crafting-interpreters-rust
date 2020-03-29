@@ -69,17 +69,6 @@ pub struct LoxString {
 }
 
 impl LoxString {
-    // Concatenate two strings, returning a new LoxString.
-    fn concatenate(table: &mut LoxStringTable, left: &LoxString, right: &LoxString) -> Self {
-        // First, build a new Box containing the result of both strings.
-        // TODO - would manually making a box of the right size be better? This potentially goes through one realloc.
-        // let new_string = Box::new([left.as_str()..right.as_str().len()]);
-        let new_string = format!("{}{}", left.as_str(), right.as_str()).into_boxed_str();
-
-        // Returned the interned string from the table.
-        table.allocate_string_from_box(new_string)
-    }
-
     pub fn as_str(&self) -> &str {
         unsafe { &*self.string }
     }
@@ -196,6 +185,22 @@ impl LoxStringTable {
             entry: Cell::new(internal_string.as_ref()),
             string: internal_string.data.as_ref() as *const str,
         }
+    }
+
+    // Concatenate two strings, returning a new LoxString.
+    //
+    // TODO - To save on the memory copy, one could probably check the table based on
+    // both strings (creating hash from both). However, that would require either a custom hashtable,
+    // or some fancy impl Borrow<str> function taking a tuple of (&str, &str) that somehow
+    // could return a single &str (seems impossible).
+    pub fn concatenate(&mut self, left: &LoxString, right: &LoxString) -> LoxString {
+        // First, build a new Box containing the result of both strings.
+        // TODO - would manually making a box of the right size be better? This potentially goes through one realloc.
+        // let new_string = Box::new([left.as_str()..right.as_str().len()]);
+        let new_string = format!("{}{}", left.as_str(), right.as_str()).into_boxed_str();
+
+        // Returned the interned string from the table.
+        self.allocate_string_from_box(new_string)
     }
 
     // Remove the interned string from the table, returning true or false if it was removed.
@@ -366,5 +371,29 @@ mod tests {
             table.remove_string(&second);
             assert_eq!(table.table.len(), 0);
         }
+    }
+
+    #[test]
+    fn concatenate_test() {
+        let mut table = LoxStringTable::new();
+
+        // test inserting new string
+        let first = table.allocate_string_from_str("abcd");
+        let second = table.allocate_string_from_str("asdf");
+
+        let result = table.concatenate(&first, &second);
+        assert_eq!(table.table.len(), 3);
+        let third = table.concatenate(&first, &second);
+        assert_eq!(table.table.len(), 3);
+        assert_eq!(result, third);
+
+        // test creating already interned string
+        let first = table.allocate_string_from_str("hello \n");
+        let second = table.allocate_string_from_str("world \n");
+        assert_eq!(table.table.len(), 5);
+        let third = table.allocate_string_from_str("hello \nworld \n");
+        let result = table.concatenate(&first, &second);
+        assert_eq!(table.table.len(), 6);
+        assert_eq!(third, result);
     }
 }
