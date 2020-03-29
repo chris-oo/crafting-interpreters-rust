@@ -62,7 +62,7 @@ impl Drop for InternalStringEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct LoxString {
     string: *const str,
     entry: Cell<*const InternalStringEntry>,
@@ -78,6 +78,24 @@ impl LoxString {
     }
 }
 
+impl Clone for LoxString {
+    fn clone(&self) -> Self {
+        let new_string = LoxString {
+            string: self.string,
+            entry: self.entry.clone(),
+        };
+
+        // Increment the refcount because we're giving out a new string.
+        assert_ne!(new_string.entry.get(), ptr::null_mut());
+        unsafe {
+            *(*(new_string.entry.get() as *mut InternalStringEntry))
+                .refcount
+                .borrow_mut() += 1;
+        }
+        new_string
+    }
+}
+
 impl Drop for LoxString {
     // Drop doesn't actually cleanup anything right now, but it decrements the internal
     // refcount for debugging verification. We check the internal refcount when we
@@ -86,7 +104,8 @@ impl Drop for LoxString {
     // We know the pointer is valid if non-null, because the table holds a
     // Box<InternalStringEntry>, which means it will not move in memory.
     fn drop(&mut self) {
-        if self.entry.get() != ptr::null_mut() {
+        if self.entry.get() != ptr::null() {
+            println!("dropping loxstring for {}", self.as_str());
             unsafe {
                 *(*(self.entry.get() as *mut InternalStringEntry))
                     .refcount
@@ -104,7 +123,9 @@ impl Drop for LoxString {
 // Which would be fine in a tokenizer, but not fine when the size of a string isn't
 // know at runtime, like with string concatenation.
 //
-// TODO - Does Rc<Box<str>> work?
+// TODO - Probably Rc<Box<str>> is better? Then there's a lot less unsafe, we
+// can just check the refcount is 2 after taking from the set. But that doesn't
+// seem to work with the Borrow<str> trait for looking things up. More investigation needed.
 //
 // Thus, in order to implement a correct interning table, it must be a
 // Box<InternalStringEntries> that themselves contain a Box<str>, as the pointers
@@ -285,6 +306,21 @@ mod tests {
         unsafe {
             assert_eq!(*(*first.entry.get()).refcount.borrow(), 4);
             assert_eq!(*(*fourth.entry.get()).refcount.borrow(), 4);
+            assert_eq!(*(*different.entry.get()).refcount.borrow(), 1);
+        }
+
+        // Clone a string
+        let fifth = fourth.clone();
+
+        assert_eq!(first, fifth);
+        assert_eq!(fourth, fifth);
+        assert_eq!(table.table.len(), 2);
+
+        // Check refcounts
+        unsafe {
+            assert_eq!(*(*first.entry.get()).refcount.borrow(), 5);
+            assert_eq!(*(*fourth.entry.get()).refcount.borrow(), 5);
+            assert_eq!(*(*fifth.entry.get()).refcount.borrow(), 5);
             assert_eq!(*(*different.entry.get()).refcount.borrow(), 1);
         }
 

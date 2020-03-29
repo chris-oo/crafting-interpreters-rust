@@ -1,6 +1,7 @@
 use crate::bytecode::Opcodes;
 use crate::chunk::Chunk;
 use crate::debug::DEBUG_PRINT_CODE;
+use crate::lox_string_table::LoxStringTable;
 use crate::scanner;
 use crate::scanner::Scanner;
 use crate::scanner::Token;
@@ -23,6 +24,7 @@ struct Parser<'a> {
     had_error: bool,
     panic_mode: bool,
     compiling_chunk: Chunk,
+    string_table: &'a mut LoxStringTable,
 }
 
 #[derive(PartialOrd, PartialEq)]
@@ -68,7 +70,7 @@ impl Precedence {
 }
 
 impl<'a> Parser<'a> {
-    fn new(source: &'a std::string::String) -> Self {
+    fn new(string_table: &'a mut LoxStringTable, source: &'a std::string::String) -> Self {
         Parser {
             scanner: scanner::Scanner::new(source),
             current: Token {
@@ -84,6 +86,7 @@ impl<'a> Parser<'a> {
             had_error: false,
             panic_mode: false,
             compiling_chunk: Chunk::new(),
+            string_table: string_table,
         }
     }
 
@@ -183,7 +186,10 @@ impl<'a> Parser<'a> {
     fn string(&mut self) {
         let str_slice = self.previous.string;
         // Skip leading and trailing '"' character
-        let value = Value::ValObjString(str_slice[1..str_slice.len() - 1].to_owned());
+        let value = Value::ValObjString(
+            self.string_table
+                .allocate_string_from_str(&str_slice[1..str_slice.len() - 1]),
+        );
 
         self.emit_constant(value);
     }
@@ -343,8 +349,11 @@ impl<'a> Parser<'a> {
     }
 }
 
-pub fn compile(source: &String) -> Result<Chunk, InterpretError> {
-    let mut parser = Parser::new(source);
+pub fn compile(
+    string_table: &mut LoxStringTable,
+    source: &String,
+) -> Result<Chunk, InterpretError> {
+    let mut parser = Parser::new(string_table, source);
 
     parser.advance();
     parser.expression();

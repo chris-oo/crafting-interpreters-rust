@@ -2,6 +2,7 @@ use crate::bytecode::Opcodes;
 use crate::chunk::Chunk;
 use crate::compiler;
 use crate::debug::DEBUG_TRACE_EXECUTION;
+use crate::lox_string_table::LoxStringTable;
 use crate::value::Value;
 
 // TODO - split compiler and vm runtime errors
@@ -14,6 +15,7 @@ pub struct VM {
     chunk: Chunk,
     ip: usize,
     stack: Vec<Value>,
+    string_table: LoxStringTable,
 }
 
 impl VM {
@@ -22,6 +24,7 @@ impl VM {
             chunk: Chunk::new(),
             ip: 0,
             stack: Vec::new(),
+            string_table: LoxStringTable::new(),
         }
     }
 
@@ -41,7 +44,7 @@ impl VM {
     }
 
     pub fn interpret(&mut self, source: &String) -> Result<(), InterpretError> {
-        self.chunk = compiler::compile(source)?;
+        self.chunk = compiler::compile(&mut self.string_table, source)?;
         self.ip = 0;
 
         self.run()
@@ -152,9 +155,8 @@ impl VM {
                 Some(Opcodes::OpLess) => binary_op!(ValBool, <),
                 Some(Opcodes::OpAdd) => match (self.pop(), self.pop()) {
                     (Value::ValObjString(b), Value::ValObjString(a)) => {
-                        // TODO - What does this optimize to? Seems like it could be very
-                        // bad.
-                        self.push(Value::ValObjString(format!("{}{}", a, b)));
+                        let string = Value::ValObjString(self.string_table.concatenate(&a, &b));
+                        self.push(string);
                     }
                     (Value::ValNumber(b), Value::ValNumber(a)) => {
                         self.push(Value::ValNumber(b + a));

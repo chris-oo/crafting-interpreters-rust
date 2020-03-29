@@ -1,17 +1,14 @@
+use crate::lox_string_table::LoxString;
 use std::fmt;
 
 // TODO - the book has two different nested types - values and objects.
 // It seems to me they could be flattened? Does it make sense to do that?
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     ValBool(bool),
     ValNil,
     ValNumber(f64),
-    // TODO - clox uses this as a pointer, but we don't need that right? Or must this be a Box/Arc?
-    // How does it interact with a GC if it's not heap allocated?
-    //
-    // TODO - instead of copied strings, do string interning like clox.
-    ValObjString(String),
+    ValObjString(LoxString),
 }
 
 impl fmt::Display for Value {
@@ -32,11 +29,5 @@ impl Value {
             Value::ValNil => true,
             _ => false,
         }
-    }
-}
-
-impl PartialEq for Value {
-    fn eq(&self, _: &Value) -> bool {
-        unimplemented!()
     }
 }
