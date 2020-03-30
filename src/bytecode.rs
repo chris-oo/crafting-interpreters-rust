@@ -10,6 +10,7 @@ pub enum Opcodes {
     OpPop,
     OpGetGlobal,
     OpDefineGlobal,
+    OpSetGlobal,
     OpEqual,
     OpGreater,
     OpLess,

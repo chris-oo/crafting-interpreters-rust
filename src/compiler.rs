@@ -43,8 +43,8 @@ enum Precedence {
 }
 
 struct ParseRule<'p, 'a> {
-    prefix: Option<fn(&'p mut Parser<'a>)>,
-    infix: Option<fn(&'p mut Parser<'a>)>,
+    prefix: Option<fn(&'p mut Parser<'a>, bool)>,
+    infix: Option<fn(&'p mut Parser<'a>, bool)>,
     precedence: Precedence,
 }
 
@@ -262,14 +262,14 @@ impl<'a> Parser<'a> {
         self.had_error = true;
     }
 
-    fn number(&mut self) {
+    fn number(&mut self, can_assign: bool) {
         let value = Value::ValNumber(
             f64::from_str(self.previous.string).expect("number token contained not a number"),
         );
         self.emit_constant(value);
     }
 
-    fn string(&mut self) {
+    fn string(&mut self, can_assign: bool) {
         let str_slice = self.previous.string;
         // Skip leading and trailing '"' character
         let value = Value::ValObjString(
@@ -280,14 +280,20 @@ impl<'a> Parser<'a> {
         self.emit_constant(value);
     }
 
-    fn named_variable(&mut self, token: Token) {
+    fn named_variable(&mut self, token: Token, can_assign: bool) {
         let arg = self.identifier_constant(token);
-        self.emit_bytes(opcode_u8!(OpGetGlobal), arg);
+
+        if can_assign && self.match_token(TokenType::TokenEqual) {
+            self.expression();
+            self.emit_bytes(opcode_u8!(OpSetGlobal), arg);
+        } else {
+            self.emit_bytes(opcode_u8!(OpGetGlobal), arg);
+        }
     }
 
-    fn variable(&mut self) {
+    fn variable(&mut self, can_assign: bool) {
         let token = self.previous;
-        self.named_variable(token);
+        self.named_variable(token, can_assign);
     }
 
     fn emit_constant(&mut self, value: Value) {
@@ -306,12 +312,12 @@ impl<'a> Parser<'a> {
         constant as u8
     }
 
-    fn grouping(&mut self) {
+    fn grouping(&mut self, can_assign: bool) {
         self.expression();
         self.consume(TokenType::TokenRightParen, "Expect ')' after expression.");
     }
 
-    fn unary(&mut self) {
+    fn unary(&mut self, can_assign: bool) {
         let operator_type = self.previous.token_type;
 
         // Compile the operand.
@@ -328,17 +334,22 @@ impl<'a> Parser<'a> {
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
 
-        let prefix_rule = self.get_rule(self.previous.token_type).prefix;
+        let prefix_rule_option = self.get_rule(self.previous.token_type).prefix;
 
-        match prefix_rule {
-            Some(rule) => {
-                rule(self);
+        match prefix_rule_option {
+            Some(prefix_rule) => {
+                let can_assign = precedence <= Precedence::PrecAssignment;
+                prefix_rule(self, can_assign);
 
                 while precedence <= self.get_rule(self.current.token_type).precedence {
                     self.advance();
                     // TODO - c parser doesn't check null for infix. This would be a parser rules bug (aka table is wrong).
                     let infix_rule = self.get_rule(self.previous.token_type).infix.unwrap();
-                    infix_rule(self);
+                    infix_rule(self, can_assign);
+                }
+
+                if can_assign && self.match_token(TokenType::TokenEqual) {
+                    self.error("Invalid assignment target.");
                 }
             }
             None => {
@@ -362,7 +373,7 @@ impl<'a> Parser<'a> {
         self.emit_bytes(opcode_u8!(OpDefineGlobal), global);
     }
 
-    fn binary(&mut self) {
+    fn binary(&mut self, can_assign: bool) {
         // Remember the operator.
         let operator_type = self.previous.token_type;
 
@@ -386,7 +397,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn literal(&mut self) {
+    fn literal(&mut self, can_assign: bool) {
         match self.previous.token_type {
             TokenType::TokenFalse => self.emit_byte(opcode_u8!(OpFalse)),
             TokenType::TokenNil => self.emit_byte(opcode_u8!(OpNil)),

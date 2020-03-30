@@ -14,9 +14,9 @@ impl Chunk {
         self.lines.push(line);
     }
 
-    pub fn add_instruction(&mut self, instruction: Opcodes, line: i32) {
-        self.write_chunk(instruction as u8, line);
-    }
+    // pub fn add_instruction(&mut self, instruction: Opcodes, line: i32) {
+    //     self.write_chunk(instruction as u8, line);
+    // }
 
     pub fn add_constant(&mut self, value: Value) -> usize {
         self.constants.push(value);
@@ -84,6 +84,9 @@ impl Chunk {
             }
             Some(Opcodes::OpDefineGlobal) => {
                 Chunk::constant_instruction("OP_DEFINE_GLOBAL", self, offset)
+            }
+            Some(Opcodes::OpSetGlobal) => {
+                Chunk::constant_instruction("OP_SET_GLOBAL", self, offset)
             }
             // Some(_) => unimplemented!("Opcode not implemented {}", self.code[offset]),
             None => {

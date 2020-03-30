@@ -188,6 +188,18 @@ impl VM {
                     self.globals.insert(name, value);
                     self.pop();
                 }
+                Some(Opcodes::OpSetGlobal) => {
+                    let name = self.read_string()?;
+                    let value = self.peek(0).clone();
+
+                    if self.globals.insert(name.clone(), value) == None {
+                        self.globals.remove(&name);
+                        self.runtime_error_formatted(
+                            format!("Undefined variable '{}'.", name.as_str()).as_str(),
+                        );
+                        return Err(InterpretError::InterpretRuntimeError);
+                    }
+                }
                 Some(Opcodes::OpEqual) => {
                     let b = self.pop();
                     let a = self.pop();
