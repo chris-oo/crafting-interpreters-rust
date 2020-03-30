@@ -17,7 +17,7 @@ impl fmt::Display for Value {
             Value::ValBool(x) => write!(f, "{}", x),
             Value::ValNil => write!(f, "nil"),
             Value::ValNumber(x) => write!(f, "{}", x),
-            Value::ValObjString(x) => write!(f, "{:?}", x),
+            Value::ValObjString(x) => write!(f, "{}", x),
         }
     }
 }

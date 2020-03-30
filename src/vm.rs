@@ -2,8 +2,10 @@ use crate::bytecode::Opcodes;
 use crate::chunk::Chunk;
 use crate::compiler;
 use crate::debug::DEBUG_TRACE_EXECUTION;
+use crate::lox_string_table::LoxString;
 use crate::lox_string_table::LoxStringTable;
 use crate::value::Value;
+use std::collections::HashMap;
 
 // TODO - split compiler and vm runtime errors
 pub enum InterpretError {
@@ -15,6 +17,7 @@ pub struct VM {
     chunk: Chunk,
     ip: usize,
     stack: Vec<Value>,
+    globals: HashMap<LoxString, Value>,
     string_table: LoxStringTable,
 }
 
@@ -24,6 +27,7 @@ impl VM {
             chunk: Chunk::new(),
             ip: 0,
             stack: Vec::new(),
+            globals: HashMap::new(),
             string_table: LoxStringTable::new(),
         }
     }
@@ -83,6 +87,18 @@ impl VM {
         self.chunk.constants[index as usize].clone()
     }
 
+    fn read_string(&mut self) -> Result<LoxString, InterpretError> {
+        match self.read_constant() {
+            Value::ValObjString(string) => {
+                return Ok(string);
+            }
+            _ => {
+                self.runtime_error_formatted("OpDefineGlobal constant wasn't a string.");
+                return Err(InterpretError::InterpretRuntimeError);
+            }
+        }
+    }
+
     fn run(&mut self) -> Result<(), InterpretError> {
         macro_rules! binary_op {
             ($value_type:tt, $op:tt) => {
@@ -118,8 +134,11 @@ impl VM {
             let instruction = num::FromPrimitive::from_u8(self.read_byte());
 
             match instruction {
-                Some(Opcodes::OpReturn) => {
+                Some(Opcodes::OpPrint) => {
                     println!("{}", self.pop());
+                }
+
+                Some(Opcodes::OpReturn) => {
                     return Ok(());
                 }
 
@@ -127,7 +146,7 @@ impl VM {
                     let constant = self.read_constant();
                     self.push(constant);
                 }
-                Some(Opcodes::OpNegate) => match self.pop() {
+                Some(Opcodes::OpNegate) => match self.peek(0).clone() {
                     Value::ValNumber(x) => {
                         self.pop();
                         self.push(Value::ValNumber(-x));
@@ -146,6 +165,29 @@ impl VM {
                 Some(Opcodes::OpFalse) => {
                     self.push(Value::ValBool(false));
                 }
+                Some(Opcodes::OpPop) => {
+                    self.pop();
+                }
+                Some(Opcodes::OpGetGlobal) => {
+                    let name = self.read_string()?;
+                    let global = self.globals.get(&name);
+
+                    if global == None {
+                        self.runtime_error_formatted(
+                            format!("Undefined variable '{}'.", name.as_str()).as_str(),
+                        );
+                        return Err(InterpretError::InterpretRuntimeError);
+                    }
+
+                    let value = global.unwrap().clone();
+                    self.push(value);
+                }
+                Some(Opcodes::OpDefineGlobal) => {
+                    let name = self.read_string()?;
+                    let value = self.peek(0).clone();
+                    self.globals.insert(name, value);
+                    self.pop();
+                }
                 Some(Opcodes::OpEqual) => {
                     let b = self.pop();
                     let a = self.pop();
@@ -153,12 +195,16 @@ impl VM {
                 }
                 Some(Opcodes::OpGreater) => binary_op!(ValBool, >),
                 Some(Opcodes::OpLess) => binary_op!(ValBool, <),
-                Some(Opcodes::OpAdd) => match (self.pop(), self.pop()) {
+                Some(Opcodes::OpAdd) => match (self.peek(0).clone(), self.peek(1).clone()) {
                     (Value::ValObjString(b), Value::ValObjString(a)) => {
+                        self.pop();
+                        self.pop();
                         let string = Value::ValObjString(self.string_table.concatenate(&a, &b));
                         self.push(string);
                     }
                     (Value::ValNumber(b), Value::ValNumber(a)) => {
+                        self.pop();
+                        self.pop();
                         self.push(Value::ValNumber(b + a));
                     }
                     _ => {

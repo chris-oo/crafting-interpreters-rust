@@ -68,6 +68,7 @@ impl Chunk {
             Some(Opcodes::OpNil) => Chunk::simple_instruction("OP_NIL", offset),
             Some(Opcodes::OpTrue) => Chunk::simple_instruction("OP_TRUE", offset),
             Some(Opcodes::OpFalse) => Chunk::simple_instruction("OP_FALSE", offset),
+            Some(Opcodes::OpPop) => Chunk::simple_instruction("OP_POP", offset),
             Some(Opcodes::OpEqual) => Chunk::simple_instruction("OP_EQUAL", offset),
             Some(Opcodes::OpGreater) => Chunk::simple_instruction("OP_GREATER", offset),
             Some(Opcodes::OpLess) => Chunk::simple_instruction("OP_LESS", offset),
@@ -77,6 +78,13 @@ impl Chunk {
             Some(Opcodes::OpMultiply) => Chunk::simple_instruction("OP_MULTIPLY", offset),
             Some(Opcodes::OpDivide) => Chunk::simple_instruction("OP_DIVIDE", offset),
             Some(Opcodes::OpNot) => Chunk::simple_instruction("OP_NOT", offset),
+            Some(Opcodes::OpPrint) => Chunk::simple_instruction("OP_PRINT", offset),
+            Some(Opcodes::OpGetGlobal) => {
+                Chunk::constant_instruction("OP_GET_GLOBAL", self, offset)
+            }
+            Some(Opcodes::OpDefineGlobal) => {
+                Chunk::constant_instruction("OP_DEFINE_GLOBAL", self, offset)
+            }
             // Some(_) => unimplemented!("Opcode not implemented {}", self.code[offset]),
             None => {
                 print!("Unknown opcode {0}\n", self.code[offset]);

@@ -114,8 +114,94 @@ impl<'a> Parser<'a> {
         self.error_at_current(message);
     }
 
+    fn check(&self, token_type: TokenType) -> bool {
+        self.current.token_type == token_type
+    }
+
+    fn match_token(&mut self, token_type: TokenType) -> bool {
+        if !self.check(token_type) {
+            return false;
+        }
+        self.advance();
+        return true;
+    }
+
     fn expression(&mut self) {
         self.parse_precedence(Precedence::PrecAssignment);
+    }
+
+    fn var_declaration(&mut self) {
+        let global = self.parse_variable("Expect variable name.");
+
+        if self.match_token(TokenType::TokenEqual) {
+            self.expression();
+        } else {
+            self.emit_byte(opcode_u8!(OpNil));
+        }
+        self.consume(
+            TokenType::TokenSemicolon,
+            "Expect ';' after variable declaration",
+        );
+
+        self.define_variable(global);
+    }
+
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume(TokenType::TokenSemicolon, "Expect ';' after value.");
+        self.emit_byte(opcode_u8!(OpPop));
+    }
+
+    fn print_statement(&mut self) {
+        self.expression();
+        self.consume(TokenType::TokenSemicolon, "Expect ';' after value.");
+        self.emit_byte(opcode_u8!(OpPrint));
+    }
+
+    fn synchronize(&mut self) {
+        self.panic_mode = false;
+
+        while self.current.token_type != TokenType::TokenEof {
+            if self.previous.token_type == TokenType::TokenSemicolon {
+                return;
+            }
+
+            match self.current.token_type {
+                TokenType::TokenClass
+                | TokenType::TokenFun
+                | TokenType::TokenVar
+                | TokenType::TokenFor
+                | TokenType::TokenIf
+                | TokenType::TokenWhile
+                | TokenType::TokenPrint
+                | TokenType::TokenReturn => {
+                    return;
+                }
+                _ => {}
+            }
+
+            self.advance();
+        }
+    }
+
+    fn declaration(&mut self) {
+        if self.match_token(TokenType::TokenVar) {
+            self.var_declaration();
+        } else {
+            self.statement();
+        }
+
+        if self.panic_mode {
+            self.synchronize();
+        }
+    }
+
+    fn statement(&mut self) {
+        if self.match_token(TokenType::TokenPrint) {
+            self.print_statement();
+        } else {
+            self.expression_statement();
+        }
     }
 
     fn emit_byte(&mut self, byte: u8) {
@@ -164,7 +250,7 @@ impl<'a> Parser<'a> {
 
         match token.token_type {
             TokenType::TokenEof => {
-                eprint!("at end");
+                eprint!(" at end");
             }
             TokenType::TokenError => {}
             _ => {
@@ -192,6 +278,16 @@ impl<'a> Parser<'a> {
         );
 
         self.emit_constant(value);
+    }
+
+    fn named_variable(&mut self, token: Token) {
+        let arg = self.identifier_constant(token);
+        self.emit_bytes(opcode_u8!(OpGetGlobal), arg);
+    }
+
+    fn variable(&mut self) {
+        let token = self.previous;
+        self.named_variable(token);
     }
 
     fn emit_constant(&mut self, value: Value) {
@@ -249,6 +345,21 @@ impl<'a> Parser<'a> {
                 self.error("Expect expression.");
             }
         }
+    }
+
+    fn identifier_constant(&mut self, name: Token) -> u8 {
+        let obj = Value::ValObjString(self.string_table.allocate_string_from_str(name.string));
+        self.make_constant(obj)
+    }
+
+    fn parse_variable(&mut self, error_message: &str) -> u8 {
+        self.consume(TokenType::TokenIdentifier, error_message);
+        let token = self.previous;
+        self.identifier_constant(token)
+    }
+
+    fn define_variable(&mut self, global: u8) {
+        self.emit_bytes(opcode_u8!(OpDefineGlobal), global);
     }
 
     fn binary(&mut self) {
@@ -324,7 +435,7 @@ impl<'a> Parser<'a> {
             TokenType::TokenGreaterEqual => make_rule!(None,                    Some(Self::binary), PrecComparison),
             TokenType::TokenLess         => make_rule!(None,                    Some(Self::binary), PrecComparison),
             TokenType::TokenLessEqual    => make_rule!(None,                    Some(Self::binary), PrecComparison),
-            TokenType::TokenIdentifier   => make_rule!(None,                    None,               PrecNone),
+            TokenType::TokenIdentifier   => make_rule!(Some(Self::variable),    None,               PrecNone),
             TokenType::TokenString       => make_rule!(Some(Self::string),      None,               PrecNone),
             TokenType::TokenNumber       => make_rule!(Some(Self::number),      None,               PrecNone),
             TokenType::TokenAnd          => make_rule!(None,                    None,               PrecNone),
@@ -356,8 +467,11 @@ pub fn compile(
     let mut parser = Parser::new(string_table, source);
 
     parser.advance();
-    parser.expression();
-    parser.consume(TokenType::TokenEof, "Expect end of expression");
+
+    while !parser.match_token(TokenType::TokenEof) {
+        parser.declaration();
+    }
+
     parser.end_compiler();
 
     if parser.had_error {

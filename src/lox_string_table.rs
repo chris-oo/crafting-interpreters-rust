@@ -2,7 +2,9 @@ use std::borrow::Borrow;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::num::Wrapping;
 use std::ops;
 use std::ptr;
 
@@ -16,12 +18,14 @@ use std::ptr;
 struct InternalStringEntry {
     // NOTE - this isn't thread safe at all, but it's okay because Lox is single threaded.
     refcount: RefCell<u64>,
+    hash: u32,
     // Data is never modified, only read.
     data: Box<str>,
 }
 
 impl Hash for InternalStringEntry {
     // Can't derive hash because the refcount can change. Only hash the actual string.
+    // NOTE - Can't just hash the stored hash, it needs to match the str we supply when using Hashset::get.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.data.hash(state);
     }
@@ -62,7 +66,7 @@ impl Drop for InternalStringEntry {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct LoxString {
     string: *const str,
     entry: Cell<*const InternalStringEntry>,
@@ -76,7 +80,33 @@ impl LoxString {
         assert_ne!(self.entry.get(), ptr::null_mut());
         unsafe { &*self.string }
     }
+
+    fn get_hash(&self) -> u32 {
+        assert_ne!(self.entry.get(), ptr::null_mut());
+        unsafe { (*(self.entry.get() as *mut InternalStringEntry)).hash }
+    }
 }
+
+impl Hash for LoxString {
+    // Can't derive hash because the refcount can change. Only hash the actual string.
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u32(self.get_hash());
+    }
+}
+
+impl PartialEq for LoxString {
+    fn eq(&self, other: &LoxString) -> bool {
+        if ptr::eq(self.string, other.string) {
+            // debug assert that both entries are the same.
+            assert_eq!(self.entry.get(), other.entry.get());
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+
+impl Eq for LoxString {}
 
 impl Clone for LoxString {
     fn clone(&self) -> Self {
@@ -96,6 +126,12 @@ impl Clone for LoxString {
     }
 }
 
+impl fmt::Display for LoxString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 impl Drop for LoxString {
     // Drop doesn't actually cleanup anything right now, but it decrements the internal
     // refcount for debugging verification. We check the internal refcount when we
@@ -105,7 +141,7 @@ impl Drop for LoxString {
     // Box<InternalStringEntry>, which means it will not move in memory.
     fn drop(&mut self) {
         if self.entry.get() != ptr::null() {
-            println!("dropping loxstring for {}", self.as_str());
+            // println!("dropping loxstring for {}", self.as_str());
             unsafe {
                 *(*(self.entry.get() as *mut InternalStringEntry))
                     .refcount
@@ -152,14 +188,32 @@ impl LoxStringTable {
         }
     }
 
+    // TODO - probably a std lib implementation of FNV-1a using hasher
+    fn hash_string(string: &str) -> u32 {
+        let mut hash = Wrapping(2166136261u32);
+
+        for c in string.bytes() {
+            hash ^= Wrapping::<u32>(c.into());
+            hash *= Wrapping::<u32>(16777619);
+        }
+
+        hash.0
+    }
+
+    fn make_new_string_entry(string: Box<str>) -> Box<InternalStringEntry> {
+        Box::new(InternalStringEntry {
+            refcount: RefCell::new(0),
+            hash: LoxStringTable::hash_string(string.as_ref()),
+            data: string,
+        })
+    }
+
     // Allocate a string from a non owning slice.
     pub fn allocate_string_from_str(&mut self, string: &str) -> LoxString {
         // Insert a new Rc if we don't have one already.
         if !self.table.contains(string) {
-            self.table.insert(Box::new(InternalStringEntry {
-                refcount: RefCell::new(0),
-                data: string.into(),
-            }));
+            self.table
+                .insert(LoxStringTable::make_new_string_entry(string.into()));
         }
 
         // Get the interned string.
@@ -188,10 +242,8 @@ impl LoxStringTable {
         // insert it.
         let string: *const str = box_string.as_ref();
         if !self.table.contains(box_string.as_ref()) {
-            self.table.insert(Box::new(InternalStringEntry {
-                refcount: RefCell::new(0),
-                data: box_string,
-            }));
+            self.table
+                .insert(LoxStringTable::make_new_string_entry(box_string));
         }
 
         // The borrow checker rightly complains that this is unsafe, but we
