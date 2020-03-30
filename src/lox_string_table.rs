@@ -1,33 +1,31 @@
 use std::borrow::Borrow;
-use std::cell::Cell;
-use std::cell::RefCell;
+
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::num::Wrapping;
 use std::ops;
-use std::ptr;
+
+use std::rc::Rc;
 
 // A lox string is an interned string. Other libs (like servo's string-cache) do
 // fancy tricks to encode a single unsafe_data member as multiple things like a
 // tag, pointer, etc, along with refcounting via drop.
 //
-// For now, we'll use an pointer, with the string table having ownership of all
-// strings. Strings can only be removed by calling explicit removal or the table being destroyed,
-// which will check against the refcount stored.
+// For the safe lib, use an Rc<InternalStringEntry>, but don't just let that be the type as
+// we want to control some things about equality and storing hashes for hashes of LoxString.
+#[derive(Debug)]
 struct InternalStringEntry {
-    // NOTE - this isn't thread safe at all, but it's okay because Lox is single threaded.
-    refcount: RefCell<u64>,
     hash: u32,
-    // Data is never modified, only read.
-    data: Box<str>,
+    // string is never modified, only read.
+    string: String,
 }
 
 impl Hash for InternalStringEntry {
-    // Can't derive hash because the refcount can change. Only hash the actual string.
+    // Only hash the actual string.
     // NOTE - Can't just hash the stored hash, it needs to match the str we supply when using Hashset::get.
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.data.hash(state);
+        self.string.hash(state);
     }
 }
 
@@ -35,60 +33,50 @@ impl ops::Deref for InternalStringEntry {
     type Target = str;
 
     fn deref(&self) -> &str {
-        self.data.as_ref()
+        self.string.as_str()
     }
 }
 
 impl PartialEq for InternalStringEntry {
     fn eq(&self, other: &InternalStringEntry) -> bool {
-        *self.data == *other.data
-    }
-}
-
-// See https://stackoverflow.com/questions/45384928/is-there-any-way-to-look-up-in-hashset-by-only-the-value-the-type-is-hashed-on
-// This allows us to search the hashmap using &str instead of InternalStringEntries.
-impl Borrow<str> for Box<InternalStringEntry> {
-    fn borrow(&self) -> &str {
-        &*self
+        self.string == other.string
     }
 }
 
 impl Eq for InternalStringEntry {}
 
-impl Drop for InternalStringEntry {
-    fn drop(&mut self) {
-        // Sanity check that refcount is 0.
-        assert_eq!(
-            *self.refcount.borrow(),
-            0,
-            "Internal string entry being dropped with outstanding references"
-        );
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+struct InternalStringEntryRc(Rc<InternalStringEntry>);
+
+// See https://stackoverflow.com/questions/45384928/is-there-any-way-to-look-up-in-hashset-by-only-the-value-the-type-is-hashed-on
+// This allows us to search the hashmap using &str instead of InternalStringEntries.
+//
+// NOTE - Due to rules on trait implementation in crates, we can't do this:
+// impl Borrow<str> for Rc<InternalStringEntry> { ... }
+// Instead, we have to use a wrapper tuple.
+impl Borrow<str> for InternalStringEntryRc {
+    fn borrow(&self) -> &str {
+        &*(self.0)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoxString {
-    string: *const str,
-    entry: Cell<*const InternalStringEntry>,
+    entry: Rc<InternalStringEntry>,
 }
 
 impl LoxString {
     pub fn as_str(&self) -> &str {
-        // Must not be invalidated
-        // TODO - all these panics really mean Rc ownership should be used instead,
-        // or this type should return Option(&str).
-        assert_ne!(self.entry.get(), ptr::null_mut());
-        unsafe { &*self.string }
+        &*self.entry
     }
 
     fn get_hash(&self) -> u32 {
-        assert_ne!(self.entry.get(), ptr::null_mut());
-        unsafe { (*(self.entry.get() as *mut InternalStringEntry)).hash }
+        self.entry.hash
     }
 }
 
 impl Hash for LoxString {
-    // Can't derive hash because the refcount can change. Only hash the actual string.
+    // Only hash the hash, no need to hash the whole string as it's precomputed.
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_u32(self.get_hash());
     }
@@ -96,58 +84,16 @@ impl Hash for LoxString {
 
 impl PartialEq for LoxString {
     fn eq(&self, other: &LoxString) -> bool {
-        if ptr::eq(self.string, other.string) {
-            // debug assert that both entries are the same.
-            assert_eq!(self.entry.get(), other.entry.get());
-            return true;
-        } else {
-            return false;
-        }
+        // Since all Lox strings are interned, a pointer equality check is all that's needed.
+        Rc::ptr_eq(&self.entry, &other.entry)
     }
 }
 
 impl Eq for LoxString {}
 
-impl Clone for LoxString {
-    fn clone(&self) -> Self {
-        let new_string = LoxString {
-            string: self.string,
-            entry: self.entry.clone(),
-        };
-
-        // Increment the refcount because we're giving out a new string.
-        assert_ne!(new_string.entry.get(), ptr::null_mut());
-        unsafe {
-            *(*(new_string.entry.get() as *mut InternalStringEntry))
-                .refcount
-                .borrow_mut() += 1;
-        }
-        new_string
-    }
-}
-
 impl fmt::Display for LoxString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
-    }
-}
-
-impl Drop for LoxString {
-    // Drop doesn't actually cleanup anything right now, but it decrements the internal
-    // refcount for debugging verification. We check the internal refcount when we
-    // remove from the table.
-    //
-    // We know the pointer is valid if non-null, because the table holds a
-    // Box<InternalStringEntry>, which means it will not move in memory.
-    fn drop(&mut self) {
-        if self.entry.get() != ptr::null() {
-            // println!("dropping loxstring for {}", self.as_str());
-            unsafe {
-                *(*(self.entry.get() as *mut InternalStringEntry))
-                    .refcount
-                    .borrow_mut() -= 1;
-            }
-        }
     }
 }
 
@@ -159,26 +105,16 @@ impl Drop for LoxString {
 // Which would be fine in a tokenizer, but not fine when the size of a string isn't
 // know at runtime, like with string concatenation.
 //
-// TODO - Probably Rc<Box<str>> is better? Then there's a lot less unsafe, we
-// can just check the refcount is 2 after taking from the set. But that doesn't
-// seem to work with the Borrow<str> trait for looking things up. More investigation needed.
+// Thus instead we hold Rc<InternalStringEntry> which also contains a String which
+// is heap allocated. Note the differences from this one vs the unsafe table, namely
+// we're not reimplementing a bastardized Rc ourselves.
 //
-// Thus, in order to implement a correct interning table, it must be a
-// Box<InternalStringEntries> that themselves contain a Box<str>, as the pointers
-// to the internal entries cannot moved as the LoxString uses them in drop to
-// maintain refcounts and the string itself cannot move as that's the whole point
-// of interning.
-//
-// Note that this is exactly what servo's string-cache does, but it's even better
-// by encoding the refcount _and_ pointer in a single u64 tag, utilizing the Entry
-// structure's size to know that memory will be aligned, and available for use.
-// Obviously if this wasn't a learning project, using that would be the better
-// idea.
-//
-// For now, use a hash set containing boxes of internal strings, with strings that
-// will only be removed by the gc.
+// Still, string-cache is probably a more optimized thing to use in a language
+// runtime, or something like it. Unsafe does allow you to do some tricks with
+// inline strings, tag/pointer packing etc which can matter when performance
+// is needed, like in a production language runtime.
 pub struct LoxStringTable {
-    table: HashSet<Box<InternalStringEntry>>,
+    table: HashSet<InternalStringEntryRc>,
 }
 
 impl LoxStringTable {
@@ -200,67 +136,43 @@ impl LoxStringTable {
         hash.0
     }
 
-    fn make_new_string_entry(string: Box<str>) -> Box<InternalStringEntry> {
-        Box::new(InternalStringEntry {
-            refcount: RefCell::new(0),
-            hash: LoxStringTable::hash_string(string.as_ref()),
-            data: string,
-        })
+    fn make_new_string_entry(string: String) -> InternalStringEntryRc {
+        InternalStringEntryRc(Rc::new(InternalStringEntry {
+            hash: LoxStringTable::hash_string(string.as_str()),
+            string: string,
+        }))
     }
 
     // Allocate a string from a non owning slice.
     pub fn allocate_string_from_str(&mut self, string: &str) -> LoxString {
-        // Insert a new Rc if we don't have one already.
-        if !self.table.contains(string) {
-            self.table
-                .insert(LoxStringTable::make_new_string_entry(string.into()));
-        }
-
-        // Get the interned string.
-        let internal_string = self.table.get(string).unwrap();
-
-        // NOTE: The refcount isn't used to determine the hash, but we need to
-        // increment it for our bookkeeping. Using RefCell, we check at runtime
-        // that this borrow can only happen one at a time.
-        {
-            *internal_string.refcount.borrow_mut() += 1;
-        }
-
-        LoxString {
-            entry: Cell::new(internal_string.as_ref()),
-            string: internal_string.data.as_ref() as *const str,
+        if let Some(entry) = self.table.get(string) {
+            // Table already contains this string, return that one instead.
+            LoxString {
+                entry: entry.0.clone(),
+            }
+        } else {
+            // Need to insert this entry. Build the Rc first, then insert so we can return the right thing.
+            let new_entry = LoxStringTable::make_new_string_entry(string.into());
+            self.table.insert(new_entry.clone());
+            LoxString { entry: new_entry.0 }
         }
     }
 
-    // Allocate a string from an existing Box<str>.
+    // Allocate a string from an existing String.
     //
-    // If the string is not interned, we keep the Box. If it's already interned, we
-    // return a LoxString with the Box held by the table.
-    fn allocate_string_from_box(&mut self, box_string: Box<str>) -> LoxString {
-        // See if we need to insert this Box<str> or not. Hold a pointer to the string
-        // because we use it for lookup later, but the box itself becomes invalid if we
-        // insert it.
-        let string: *const str = box_string.as_ref();
-        if !self.table.contains(box_string.as_ref()) {
-            self.table
-                .insert(LoxStringTable::make_new_string_entry(box_string));
-        }
-
-        // The borrow checker rightly complains that this is unsafe, but we
-        // know that the string is still valid because the box regardless of being
-        // added to the table or not, is not dropped until the end of the function.
-        let internal_string = unsafe { self.table.get(&*string).unwrap() };
-
-        // NOTE: The refcount isn't used to determine the hash, but we need to
-        // increment it for our bookkeeping. Using RefCell, we check at runtime
-        // that this borrow can only happen one at a time.
-        {
-            *internal_string.refcount.borrow_mut() += 1;
-        }
-
-        LoxString {
-            entry: Cell::new(internal_string.as_ref()),
-            string: internal_string.data.as_ref() as *const str,
+    // If the string is not interned, we take the String. If it's already interned, we
+    // return a LoxString with the Rc held by the table.
+    fn allocate_string_from_string(&mut self, string: String) -> LoxString {
+        if let Some(entry) = self.table.get(string.as_str()) {
+            // Table already contains this string, return that one instead.
+            LoxString {
+                entry: entry.0.clone(),
+            }
+        } else {
+            // Need to insert this entry. Build the Rc first, then insert so we can return the right thing.
+            let new_entry = LoxStringTable::make_new_string_entry(string);
+            self.table.insert(new_entry.clone());
+            LoxString { entry: new_entry.0 }
         }
     }
 
@@ -271,19 +183,21 @@ impl LoxStringTable {
     // or some fancy impl Borrow<str> function taking a tuple of (&str, &str) that somehow
     // could return a single &str (seems impossible).
     pub fn concatenate(&mut self, left: &LoxString, right: &LoxString) -> LoxString {
-        // First, build a new Box containing the result of both strings.
-        // TODO - would manually making a box of the right size be better? This potentially goes through one realloc.
-        // let new_string = Box::new([left.as_str()..right.as_str().len()]);
-        let new_string = format!("{}{}", left.as_str(), right.as_str()).into_boxed_str();
+        let left_str = left.as_str();
+        let right_str = right.as_str();
+        let mut new_string = String::with_capacity(left_str.len() + right_str.len());
+        new_string.push_str(left_str);
+        new_string.push_str(right_str);
 
         // Returned the interned string from the table.
-        self.allocate_string_from_box(new_string)
+        self.allocate_string_from_string(new_string)
     }
 
     // Remove the interned string from the table, returning true or false if it was removed.
     // The passed in string must be the last owner, and the internal string entry pointer
     // will be removed, so when the LoxString is dropped, there is no dangling pointer.
     //
+    // TODO - GC not implemented yet so probably semantics of this function will change.
     // TODO - return Result type vs panic?
     pub fn remove_string(&mut self, string: &LoxString) {
         // Take the string, it should exist.
@@ -292,12 +206,12 @@ impl LoxStringTable {
             .take(string.as_str())
             .expect("Asked to remove a string not present");
 
-        // This must be the last owner. Manually clear the last owner, and
-        // remove the link in LoxString. Sanity check that the pointer stored
-        // is actually the pointer of the Box<InternalStringEntry>.
-        assert_eq!(entry.refcount.replace(0), 1);
-        let entry_ptr = string.entry.replace(ptr::null());
-        assert_eq!(entry.as_ref() as *const InternalStringEntry, entry_ptr);
+        // We should have two owners, the LoxString, and the entry we removed
+        // from the table. Thus, once we drop the table entry, and the caller
+        // drops the LoxString, the string will actually get cleaned up.
+        assert_eq!(Rc::strong_count(&entry.0), 2);
+        assert_eq!(Rc::strong_count(&string.entry), 2);
+        assert!(Rc::ptr_eq(&entry.0, &string.entry));
     }
 }
 
@@ -305,6 +219,7 @@ impl LoxStringTable {
 mod tests {
 
     use super::LoxStringTable;
+    use std::rc::Rc;
 
     #[test]
     fn basic_test() {
@@ -325,12 +240,8 @@ mod tests {
         assert_eq!(table.table.len(), 2);
 
         // Check refcounts
-        unsafe {
-            assert_eq!(*(*first.entry.get()).refcount.borrow(), 3);
-            assert_eq!(*(*different.entry.get()).refcount.borrow(), 1);
-        }
-
-        let raw_entry_ptr = first.entry.get();
+        assert_eq!(Rc::strong_count(&first.entry), 4);
+        assert_eq!(Rc::strong_count(&different.entry), 2);
 
         // Force some hashmap reallocations, then check everything again.
         table.table.shrink_to_fit();
@@ -346,20 +257,15 @@ mod tests {
 
         // sanity check that the internals match
         assert_eq!(first.as_str(), "abcd");
-        assert_eq!(first.entry.get(), second.entry.get());
-        assert_eq!(first.entry.get(), raw_entry_ptr);
-        assert_eq!(first, fourth);
-        assert_eq!(first.entry.get(), fourth.entry.get());
+        assert_eq!(fourth.as_str(), "abcd");
 
         assert_ne!(first, different);
         assert_eq!(table.table.len(), 2);
 
         // Check refcounts
-        unsafe {
-            assert_eq!(*(*first.entry.get()).refcount.borrow(), 4);
-            assert_eq!(*(*fourth.entry.get()).refcount.borrow(), 4);
-            assert_eq!(*(*different.entry.get()).refcount.borrow(), 1);
-        }
+        assert_eq!(Rc::strong_count(&first.entry), 5);
+        assert_eq!(Rc::strong_count(&fourth.entry), 5);
+        assert_eq!(Rc::strong_count(&different.entry), 2);
 
         // Clone a string
         let fifth = fourth.clone();
@@ -369,12 +275,10 @@ mod tests {
         assert_eq!(table.table.len(), 2);
 
         // Check refcounts
-        unsafe {
-            assert_eq!(*(*first.entry.get()).refcount.borrow(), 5);
-            assert_eq!(*(*fourth.entry.get()).refcount.borrow(), 5);
-            assert_eq!(*(*fifth.entry.get()).refcount.borrow(), 5);
-            assert_eq!(*(*different.entry.get()).refcount.borrow(), 1);
-        }
+        assert_eq!(Rc::strong_count(&first.entry), 6);
+        assert_eq!(Rc::strong_count(&fourth.entry), 6);
+        assert_eq!(Rc::strong_count(&fifth.entry), 6);
+        assert_eq!(Rc::strong_count(&different.entry), 2);
 
         // Every string ref should be dropped, so fair game to cleanup.
     }
@@ -386,21 +290,28 @@ mod tests {
         {
             // Allocate the string, then drop it.
             let unique = table.allocate_string_from_str("abcd");
+            assert_eq!(Rc::strong_count(&unique.entry), 2);
 
             assert_eq!(table.table.len(), 1);
 
             table.remove_string(&unique);
             assert_eq!(table.table.len(), 0);
+            assert_eq!(Rc::strong_count(&unique.entry), 1);
         }
 
         {
+            assert_eq!(table.table.len(), 0);
+
             let first = table.allocate_string_from_str("abcd");
             {
                 let second = table.allocate_string_from_str("abcd");
                 assert_eq!(table.table.len(), 1);
                 assert_eq!(first, second);
+                assert_eq!(Rc::strong_count(&first.entry), 3);
             }
+            assert_eq!(Rc::strong_count(&first.entry), 2);
             table.remove_string(&first);
+            assert_eq!(Rc::strong_count(&first.entry), 1);
             assert_eq!(table.table.len(), 0);
         }
         assert_eq!(table.table.len(), 0);
@@ -411,29 +322,25 @@ mod tests {
     }
 
     #[test]
-    fn box_allocate() {
+    fn string_allocate() {
         let mut table = LoxStringTable::new();
 
         // Test inserting a box string
         {
-            let raw_string: Box<str> = Box::from("abcd");
-            let raw_ptr: *const str = raw_string.as_ref();
+            let raw_string = String::from("abcd");
+            let raw_ptr: *const str = raw_string.as_str();
 
-            let first = table.allocate_string_from_box(raw_string);
+            let first = table.allocate_string_from_string(raw_string);
             let second = table.allocate_string_from_str("abcd");
 
-            assert_eq!(raw_ptr, first.string);
-            assert_eq!(raw_ptr, second.string);
+            assert_eq!(raw_ptr, first.as_str());
+            assert_eq!(raw_ptr, second.as_str());
             assert_eq!(first, second);
             assert_eq!(table.table.len(), 1);
 
             // sanity check that the internals match
             assert_eq!(first.as_str(), "abcd");
-
-            unsafe {
-                assert_eq!(*(*first.entry.get()).refcount.borrow(), 2);
-                assert_eq!(*(*second.entry.get()).refcount.borrow(), 2);
-            }
+            assert_eq!(Rc::strong_count(&first.entry), 3);
 
             // remove the string from the table.
             drop(first);
@@ -444,24 +351,20 @@ mod tests {
 
         // Test box string returning already interened string
         {
-            let raw_string: Box<str> = Box::from("asdfasdf");
+            let raw_string = String::from("asdfasdf");
             let raw_ptr: *const str = raw_string.as_ref();
 
             let first = table.allocate_string_from_str("asdfasdf");
-            let second = table.allocate_string_from_box(raw_string);
+            let second = table.allocate_string_from_string(raw_string);
 
-            assert_ne!(raw_ptr, first.string);
-            assert_ne!(raw_ptr, second.string);
+            assert_ne!(raw_ptr, first.as_str());
+            assert_ne!(raw_ptr, second.as_str());
             assert_eq!(first, second);
             assert_eq!(table.table.len(), 1);
 
             // sanity check that the internals match
             assert_eq!(second.as_str(), "asdfasdf");
-
-            unsafe {
-                assert_eq!(*(*first.entry.get()).refcount.borrow(), 2);
-                assert_eq!(*(*second.entry.get()).refcount.borrow(), 2);
-            }
+            assert_eq!(Rc::strong_count(&second.entry), 3);
 
             // remove the string from the table.
             drop(first);

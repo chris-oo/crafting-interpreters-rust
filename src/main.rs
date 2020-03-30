@@ -7,7 +7,7 @@ mod chunk;
 mod compiler;
 mod debug;
 mod lox_string_table;
-mod lox_string_table_safe;
+mod lox_string_table_unsafe;
 mod scanner;
 mod value;
 mod vm;
