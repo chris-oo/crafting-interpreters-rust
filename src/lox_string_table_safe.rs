@@ -165,13 +165,19 @@ impl LoxStringTable {
     // If the string is not interned, we clone the Rc. If it's already interned, we
     // return a LoxString with the Rc held by the table.
     fn allocate_string_from_string(&mut self, string: String) -> LoxString {
-        // See if we need to insert this String or not.
+        // See if we need to insert this String or not. Hold a pointer to the string
+        // because we use it for lookup later, but the string itself is invalid post insertion
+        // due to the borrow.
+        let string_ptr: *const str = string.as_str();
         if !self.table.contains(string.as_str()) {
             self.table
                 .insert(LoxStringTable::make_new_string_entry(string));
         }
 
-        let internal_string = self.table.get(string.as_str()).unwrap();
+        // The borrow checker rightly complains that this is unsafe, but we
+        // know that the string is still valid because the string regardless of being
+        // added to the table or not, is not dropped until the end of the function.
+        let internal_string = unsafe { self.table.get(&*string_ptr).unwrap() };
 
         LoxString {
             entry: internal_string.0.clone(),
